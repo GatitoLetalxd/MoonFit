@@ -1,0 +1,609 @@
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  TextInput,
+  Modal,
+  Image,
+  RefreshControl,
+  ActivityIndicator,
+} from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as ImagePicker from 'expo-image-picker';
+import { Header } from '../../components/common/Header';
+import { useAuth } from '../../context/AuthContext';
+import { useNotification } from '../../context/NotificationContext';
+import { progressApi, goalsApi } from '../../api/services';
+import { WeeklyWeightLog, ProgressPhoto, Goal } from '../../types';
+import { theme } from '../../theme';
+import {
+  TrendingUp,
+  Camera,
+  Plus,
+  Scale,
+  Calendar,
+  Layers,
+  X,
+  CheckCircle2,
+} from 'lucide-react-native';
+
+export const ProgressScreen: React.FC = () => {
+  const { user } = useAuth();
+  const { showToast, triggerHaptic } = useNotification();
+
+  const [authToken, setAuthToken] = useState<string | null>(null);
+  const [weightLogs, setWeightLogs] = useState<WeeklyWeightLog[]>([]);
+  const [photos, setPhotos] = useState<ProgressPhoto[]>([]);
+  const [activeGoal, setActiveGoal] = useState<Goal | null>(null);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
+
+  // Modal registrar peso
+  const [weightModalVisible, setWeightModalVisible] = useState<boolean>(false);
+  const [newWeight, setNewWeight] = useState<string>('');
+  const [newNotes, setNewNotes] = useState<string>('');
+  const [submittingWeight, setSubmittingWeight] = useState<boolean>(false);
+
+  // Modal comparador fotos
+  const [compareModalVisible, setCompareModalVisible] = useState<boolean>(false);
+  const [compareBeforePhoto, setCompareBeforePhoto] = useState<ProgressPhoto | null>(null);
+  const [compareAfterPhoto, setCompareAfterPhoto] = useState<ProgressPhoto | null>(null);
+
+  const loadData = async () => {
+    try {
+      const [token, wRes, pRes, gRes] = await Promise.all([
+        AsyncStorage.getItem('@moonfit_access_token'),
+        progressApi.getWeightLogs().catch(() => ({ data: [] })),
+        progressApi.getPhotos().catch(() => ({ data: [] })),
+        goalsApi.getActiveGoal().catch(() => ({ data: undefined })),
+      ]);
+
+      if (token) setAuthToken(token);
+      if (wRes.data) setWeightLogs(wRes.data);
+      if (pRes.data) {
+        setPhotos(pRes.data);
+        if (pRes.data.length >= 2) {
+          setCompareBeforePhoto(pRes.data[pRes.data.length - 1]);
+          setCompareAfterPhoto(pRes.data[0]);
+        }
+      }
+      if (gRes.data) setActiveGoal(gRes.data);
+    } catch (e) {
+      console.error('Error cargando progreso:', e);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const handleSaveWeight = async () => {
+    if (!newWeight.trim()) {
+      showToast('Campo Requerido', 'Ingresa tu peso en kilogramos.', 'warning');
+      return;
+    }
+
+    try {
+      setSubmittingWeight(true);
+      await progressApi.logWeight({
+        weight_kg: Number(newWeight),
+        notes: newNotes.trim() || undefined,
+      });
+
+      showToast('¡Peso Registrado!', 'Se ha actualizado tu historial semanal.', 'success');
+      triggerHaptic('success');
+      setWeightModalVisible(false);
+      setNewWeight('');
+      setNewNotes('');
+      loadData();
+    } catch (e: any) {
+      showToast('Error al registrar', e.response?.data?.message || e.message, 'error');
+    } finally {
+      setSubmittingWeight(false);
+    }
+  };
+
+  const handlePickPhoto = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [3, 4],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        uploadProgressPhoto(result.assets[0].uri);
+      }
+    } catch (e) {
+      showToast('Error', 'No se pudo abrir la galería', 'error');
+    }
+  };
+
+  const uploadProgressPhoto = async (uri: string) => {
+    try {
+      showToast('Subiendo foto...', 'Cifrando y guardando en servidor.', 'info');
+      const formData = new FormData();
+      const filename = uri.split('/').pop() || 'progress.jpg';
+      const match = /\.(\w+)$/.exec(filename);
+      const type = match ? `image/${match[1]}` : `image/jpeg`;
+
+      formData.append('photo', {
+        uri,
+        name: filename,
+        type,
+      } as any);
+
+      await progressApi.uploadPhoto(formData);
+      showToast('¡Foto Guardada!', 'Se añadió a tu galería privada.', 'success');
+      triggerHaptic('success');
+      loadData();
+    } catch (e: any) {
+      showToast('Error al subir', e.message, 'error');
+    }
+  };
+
+  const latestWeight = weightLogs[0]?.weight_kg || user?.initial_weight_kg || 0;
+  const initialWeight = user?.initial_weight_kg || latestWeight;
+  const targetWeight = activeGoal?.target_weight_kg || 0;
+
+  const totalLost = initialWeight > 0 && latestWeight > 0 ? (initialWeight - latestWeight).toFixed(1) : '0.0';
+
+  return (
+    <View style={styles.container}>
+      <Header title="Progreso Físico" subtitle="Evolución semanal y fotos privadas" />
+
+      <ScrollView
+        style={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={loadData} tintColor={theme.colors.primary} />}
+      >
+        {/* KPI Summary Row */}
+        <View style={styles.kpiRow}>
+          <View style={styles.kpiCard}>
+            <Text style={styles.kpiLabel}>PESO ACTUAL</Text>
+            <Text style={styles.kpiValue}>{latestWeight} kg</Text>
+            <Text style={styles.kpiSub}>Último registro</Text>
+          </View>
+          <View style={styles.kpiCard}>
+            <Text style={styles.kpiLabel}>VARIACIÓN</Text>
+            <Text style={[styles.kpiValue, { color: Number(totalLost) > 0 ? theme.colors.success : theme.colors.primary }]}>
+              {Number(totalLost) > 0 ? `-${totalLost}` : totalLost} kg
+            </Text>
+            <Text style={styles.kpiSub}>Desde el inicio</Text>
+          </View>
+          {targetWeight > 0 && (
+            <View style={styles.kpiCard}>
+              <Text style={styles.kpiLabel}>META</Text>
+              <Text style={[styles.kpiValue, { color: theme.colors.accent }]}>{targetWeight} kg</Text>
+              <Text style={styles.kpiSub}>Objetivo</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Action Button: Register Weight */}
+        <TouchableOpacity
+          style={styles.logWeightBtn}
+          onPress={() => setWeightModalVisible(true)}
+        >
+          <Scale size={18} color="#fff" />
+          <Text style={styles.logWeightBtnText}>Registrar Peso de Esta Semana</Text>
+        </TouchableOpacity>
+
+        {/* Weekly Weight History List */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>HISTORIAL DE PESO SEMANAL</Text>
+
+          {weightLogs.length === 0 ? (
+            <View style={styles.emptyBox}>
+              <Text style={styles.emptyText}>No tienes registros de peso aún.</Text>
+            </View>
+          ) : (
+            weightLogs.map((log, idx) => (
+              <View key={log.id} style={styles.weightItem}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  <View style={styles.weightIconCircle}>
+                    <TrendingUp size={16} color={theme.colors.primary} />
+                  </View>
+                  <View>
+                    <Text style={styles.weightDate}>
+                      Semana {new Date(log.week_start_date).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}
+                    </Text>
+                    {log.notes ? <Text style={styles.weightNotes}>"{log.notes}"</Text> : null}
+                  </View>
+                </View>
+                <Text style={styles.weightItemKg}>{log.weight_kg} kg</Text>
+              </View>
+            ))
+          )}
+        </View>
+
+        {/* Progress Photos Gallery */}
+        <View style={styles.section}>
+          <View style={styles.photosHeader}>
+            <Text style={styles.sectionTitle}>FOTOS DE PROGRESO PRIVADAS ({photos.length})</Text>
+            {photos.length >= 2 && (
+              <TouchableOpacity onPress={() => setCompareModalVisible(true)}>
+                <Text style={styles.compareLink}>Comparar</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          <TouchableOpacity style={styles.addPhotoBox} onPress={handlePickPhoto}>
+            <Camera size={24} color={theme.colors.primary} />
+            <Text style={styles.addPhotoText}>Subir Nueva Foto de Progreso</Text>
+          </TouchableOpacity>
+
+          {photos.length > 0 && (
+            <View style={styles.photosGrid}>
+              {photos.map((p) => (
+                <View key={p.id} style={styles.photoThumbnailWrapper}>
+                  <Image
+                    source={{
+                      uri: progressApi.getPhotoViewUrl(p.id, authToken),
+                      headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined,
+                    }}
+                    style={styles.photoThumbnail}
+                  />
+                  <Text style={styles.photoDate}>
+                    {new Date(p.taken_at).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+
+        <View style={{ height: 40 }} />
+      </ScrollView>
+
+      {/* Modal: Registrar Peso */}
+      <Modal visible={weightModalVisible} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>REGISTRAR PESO SEMANAL</Text>
+              <TouchableOpacity onPress={() => setWeightModalVisible(false)}>
+                <X size={20} color="#fff" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Peso en Kilogramos (Kg)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Ej. 74.5"
+                placeholderTextColor={theme.colors.textDim}
+                keyboardType="decimal-pad"
+                value={newWeight}
+                onChangeText={setNewWeight}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Notas u Observaciones (Opcional)</Text>
+              <TextInput
+                style={[styles.input, { height: 70 }]}
+                placeholder="Ej. Me sentí ligera esta semana"
+                placeholderTextColor={theme.colors.textDim}
+                multiline
+                value={newNotes}
+                onChangeText={setNewNotes}
+              />
+            </View>
+
+            <TouchableOpacity
+              style={styles.submitModalBtn}
+              onPress={handleSaveWeight}
+              disabled={submittingWeight}
+            >
+              {submittingWeight ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={styles.submitModalBtnText}>Guardar Registro</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal: Comparador Antes y Después */}
+      <Modal visible={compareModalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { maxHeight: '90%' }]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>COMPARADOR ANTES / DESPUÉS</Text>
+              <TouchableOpacity onPress={() => setCompareModalVisible(false)}>
+                <X size={20} color="#fff" />
+              </TouchableOpacity>
+            </View>
+
+            {compareBeforePhoto && compareAfterPhoto && (
+              <View style={styles.compareRow}>
+                <View style={styles.compareCol}>
+                  <Text style={styles.compareTag}>ANTES</Text>
+                  <Image
+                    source={{
+                      uri: progressApi.getPhotoViewUrl(compareBeforePhoto.id, authToken),
+                      headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined,
+                    }}
+                    style={styles.compareImage}
+                  />
+                  <Text style={styles.compareDate}>
+                    {new Date(compareBeforePhoto.taken_at).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}
+                  </Text>
+                </View>
+
+                <View style={styles.compareCol}>
+                  <Text style={[styles.compareTag, { color: theme.colors.success }]}>DESPUÉS</Text>
+                  <Image
+                    source={{
+                      uri: progressApi.getPhotoViewUrl(compareAfterPhoto.id, authToken),
+                      headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined,
+                    }}
+                    style={styles.compareImage}
+                  />
+                  <Text style={styles.compareDate}>
+                    {new Date(compareAfterPhoto.taken_at).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}
+                  </Text>
+                </View>
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#0B0F17',
+  },
+  content: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+  },
+  kpiRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 16,
+  },
+  kpiCard: {
+    flex: 1,
+    backgroundColor: 'rgba(23, 31, 48, 0.8)',
+    borderRadius: theme.radius.lg,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: theme.colors.borderSubtle,
+    alignItems: 'center',
+  },
+  kpiLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: theme.colors.textDim,
+    letterSpacing: 0.8,
+  },
+  kpiValue: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#fff',
+    marginVertical: 4,
+  },
+  kpiSub: {
+    fontSize: 10,
+    color: theme.colors.textMuted,
+  },
+  logWeightBtn: {
+    flexDirection: 'row',
+    backgroundColor: theme.colors.primaryDark,
+    borderRadius: theme.radius.md,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 24,
+  },
+  logWeightBtnText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  section: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: theme.colors.textMuted,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginBottom: 12,
+  },
+  emptyBox: {
+    padding: 20,
+    borderRadius: theme.radius.md,
+    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: theme.colors.borderSubtle,
+  },
+  emptyText: {
+    color: theme.colors.textDim,
+    fontSize: 13,
+  },
+  weightItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderRadius: theme.radius.md,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: theme.colors.borderSubtle,
+    marginBottom: 8,
+  },
+  weightIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 50,
+    backgroundColor: 'rgba(6, 182, 212, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  weightDate: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  weightNotes: {
+    fontSize: 12,
+    color: theme.colors.textMuted,
+    marginTop: 2,
+  },
+  weightItemKg: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: theme.colors.primary,
+  },
+  photosHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  compareLink: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: theme.colors.primary,
+  },
+  addPhotoBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1.5,
+    borderColor: 'rgba(6, 182, 212, 0.4)',
+    borderStyle: 'dashed',
+    borderRadius: theme.radius.md,
+    padding: 16,
+    backgroundColor: 'rgba(6, 182, 212, 0.04)',
+    marginBottom: 14,
+  },
+  addPhotoText: {
+    color: theme.colors.primary,
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  photosGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  photoThumbnailWrapper: {
+    width: '31%',
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderRadius: theme.radius.md,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: theme.colors.borderSubtle,
+  },
+  photoThumbnail: {
+    width: '100%',
+    height: 120,
+  },
+  photoDate: {
+    fontSize: 10,
+    color: theme.colors.textMuted,
+    textAlign: 'center',
+    paddingVertical: 4,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: '#0F172A',
+    borderRadius: theme.radius.xl,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#fff',
+    letterSpacing: 1,
+  },
+  inputGroup: {
+    marginBottom: 16,
+  },
+  label: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: theme.colors.textMuted,
+    marginBottom: 6,
+  },
+  input: {
+    backgroundColor: 'rgba(11, 15, 23, 0.7)',
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.borderSubtle,
+    height: 48,
+    color: '#fff',
+    paddingHorizontal: 14,
+    fontSize: 15,
+  },
+  submitModalBtn: {
+    backgroundColor: theme.colors.primaryDark,
+    borderRadius: theme.radius.md,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  submitModalBtnText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  compareRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 10,
+  },
+  compareCol: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  compareTag: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: theme.colors.primary,
+    marginBottom: 6,
+  },
+  compareImage: {
+    width: '100%',
+    height: 240,
+    borderRadius: theme.radius.md,
+  },
+  compareDate: {
+    fontSize: 11,
+    color: theme.colors.textMuted,
+    marginTop: 6,
+  },
+});

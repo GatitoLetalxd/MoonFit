@@ -1,0 +1,60 @@
+# Dependencies
+node_modules/
+*/node_modules/
+
+# Environment Variables (Keep examples)
+.env
+.env.local
+.env.*.local
+*.env
+!*.env.example
+!*.env.production.example
+!.env.example
+!.env.production.example
+
+# Build outputs
+dist/
+*/dist/
+build/
+*/build/
+.expo/
+*/.expo/
+web-build/
+*/web-build/
+*.tsbuildinfo
+
+# Android Native Build Outputs (Ignore heavy cache/build dirs, keep source config)
+android/.gradle/
+android/build/
+android/app/build/
+mobile/android/.gradle/
+mobile/android/build/
+mobile/android/app/build/
+*.apk
+*.aab
+
+# Logs and debug
+logs/
+*/logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Storage and uploads (Keep placeholder gitkeeps)
+backend/storage/progress/*
+!backend/storage/progress/.gitkeep
+backend/storage/meals/*
+!backend/storage/meals/.gitkeep
+backend/storage/avatars/*
+!backend/storage/avatars/.gitkeep
+storage/*
+!storage/.gitkeep
+
+# System & IDE files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.agents/

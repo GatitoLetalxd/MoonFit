@@ -1,0 +1,250 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum GoalStatus {
+  ACTIVA
+  CUMPLIDA
+  ABANDONADA
+}
+
+model User {
+  id                   String               @id @default(uuid())
+  name                 String
+  email                String               @unique
+  password_hash        String
+  role                 Role                 @default(USER)
+  age                  Int?
+  height_cm            Float?
+  initial_weight_kg    Float?
+  avatar_url           String?
+  active               Boolean              @default(true)
+  onboarding_completed Boolean              @default(false)
+  created_at           DateTime             @default(now())
+  updated_at           DateTime             @updatedAt
+
+  refresh_tokens       RefreshToken[]
+  goals                Goal[]
+  routines             Routine[]
+  assigned_routines    RoutineAssignment[]  @relation("UserAssignedRoutines")
+  given_assignments    RoutineAssignment[]  @relation("AdminGivenAssignments")
+  workout_logs         WorkoutLog[]
+  weekly_weight_logs   WeeklyWeightLog[]
+  body_measurements    BodyMeasurement[]
+  progress_photos      ProgressPhoto[]
+  meals                Meal[]
+  water_logs           WaterLog[]
+  reminders            Reminder[]
+  received_feedback    AdminFeedback[]      @relation("UserReceivedFeedback")
+  given_feedback       AdminFeedback[]      @relation("AdminGivenFeedback")
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id         Int      @id @default(autoincrement())
+  user_id    String
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  token_hash String
+  expires_at DateTime
+  revoked    Boolean  @default(false)
+  created_at DateTime @default(now())
+
+  @@index([user_id])
+  @@map("refresh_tokens")
+}
+
+model Goal {
+  id               Int        @id @default(autoincrement())
+  user_id          String
+  user             User       @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  target_weight_kg Float
+  target_date      DateTime
+  status           GoalStatus @default(ACTIVA)
+  created_at       DateTime   @default(now())
+  updated_at       DateTime   @updatedAt
+
+  @@index([user_id])
+  @@map("goals")
+}
+
+model Routine {
+  id            Int                 @id @default(autoincrement())
+  user_id       String?
+  user          User?               @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  name          String
+  type          String
+  is_predefined Boolean             @default(false)
+  created_at    DateTime            @default(now())
+  updated_at    DateTime            @updatedAt
+
+  exercises     RoutineExercise[]
+  assignments   RoutineAssignment[]
+  workout_logs  WorkoutLog[]
+
+  @@index([user_id])
+  @@map("routines")
+}
+
+model RoutineExercise {
+  id            Int      @id @default(autoincrement())
+  routine_id    Int
+  routine       Routine  @relation(fields: [routine_id], references: [id], onDelete: Cascade)
+  exercise_name String
+  sets          Int
+  reps          Int
+  rest_seconds  Int      @default(60)
+  order_index   Int      @default(0)
+
+  @@index([routine_id])
+  @@map("routine_exercises")
+}
+
+model RoutineAssignment {
+  id          Int      @id @default(autoincrement())
+  routine_id  Int
+  routine     Routine  @relation(fields: [routine_id], references: [id], onDelete: Cascade)
+  user_id     String
+  user        User     @relation("UserAssignedRoutines", fields: [user_id], references: [id], onDelete: Cascade)
+  assigned_by String?
+  admin       User?    @relation("AdminGivenAssignments", fields: [assigned_by], references: [id], onDelete: SetNull)
+  assigned_at DateTime @default(now())
+
+  @@index([user_id])
+  @@index([routine_id])
+  @@map("routine_assignments")
+}
+
+model WorkoutLog {
+  id                  Int      @id @default(autoincrement())
+  user_id             String
+  user                User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  routine_id          Int
+  routine             Routine  @relation(fields: [routine_id], references: [id], onDelete: Cascade)
+  status              String   @default("COMPLETADA") // "COMPLETADA" | "CANCELADA"
+  duration_seconds    Int?     // Duración en segundos
+  exercises_completed Int?     // Ejercicios realizados
+  total_exercises     Int?     // Total de ejercicios
+  completed_at        DateTime @default(now())
+
+  @@index([user_id])
+  @@index([routine_id])
+  @@map("workout_logs")
+}
+
+model WeeklyWeightLog {
+  id              Int      @id @default(autoincrement())
+  user_id         String
+  user            User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  week_start_date DateTime @db.Date
+  weight_kg       Float
+  notes           String?
+  logged_at       DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  @@unique([user_id, week_start_date])
+  @@index([user_id])
+  @@map("weekly_weight_logs")
+}
+
+model BodyMeasurement {
+  id              Int      @id @default(autoincrement())
+  user_id         String
+  user            User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  week_start_date DateTime @db.Date
+  waist_cm        Float?
+  arm_cm          Float?
+  other_json      Json?
+  created_at      DateTime @default(now())
+
+  @@index([user_id])
+  @@map("body_measurements")
+}
+
+model ProgressPhoto {
+  id           String   @id @default(uuid())
+  user_id      String
+  user         User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  storage_path String
+  taken_at     DateTime @default(now())
+  created_at   DateTime @default(now())
+
+  @@index([user_id])
+  @@map("progress_photos")
+}
+
+model Meal {
+  id          Int         @id @default(autoincrement())
+  user_id     String
+  user        User        @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  description String?
+  meal_type   String?     // desayuno, almuerzo, cena, snack
+  logged_at   DateTime    @default(now())
+  created_at  DateTime    @default(now())
+
+  photos      MealPhoto[]
+
+  @@index([user_id])
+  @@map("meals")
+}
+
+model MealPhoto {
+  id           String   @id @default(uuid())
+  meal_id      Int
+  meal         Meal     @relation(fields: [meal_id], references: [id], onDelete: Cascade)
+  storage_path String
+  created_at   DateTime @default(now())
+
+  @@index([meal_id])
+  @@map("meal_photos")
+}
+
+model WaterLog {
+  id         Int      @id @default(autoincrement())
+  user_id    String
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  amount_ml  Int
+  logged_at  DateTime @default(now())
+
+  @@index([user_id])
+  @@map("water_logs")
+}
+
+model Reminder {
+  id         Int      @id @default(autoincrement())
+  user_id    String
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  type       String   // entrenar, agua, pesarse
+  time       String   // HH:mm
+  frequency  String   // diario, semanal, etc.
+  active     Boolean  @default(true)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@index([user_id])
+  @@map("reminders")
+}
+
+model AdminFeedback {
+  id         Int      @id @default(autoincrement())
+  user_id    String
+  user       User     @relation("UserReceivedFeedback", fields: [user_id], references: [id], onDelete: Cascade)
+  admin_id   String
+  admin      User     @relation("AdminGivenFeedback", fields: [admin_id], references: [id], onDelete: Cascade)
+  message    String
+  created_at DateTime @default(now())
+
+  @@index([user_id])
+  @@index([admin_id])
+  @@map("admin_feedback")
+}
