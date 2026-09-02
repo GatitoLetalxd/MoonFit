@@ -16,6 +16,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { Header } from '../../components/common/Header';
 import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
+import { useSync } from '../../context/SyncContext';
+import { offlineStorage } from '../../utils/offlineStorage';
 import { progressApi, goalsApi } from '../../api/services';
 import { WeeklyWeightLog, ProgressPhoto, Goal } from '../../types';
 import { theme } from '../../theme';
@@ -33,6 +35,7 @@ import {
 export const ProgressScreen: React.FC = () => {
   const { user } = useAuth();
   const { showToast, triggerHaptic } = useNotification();
+  const { isOnline, enqueueAction } = useSync();
 
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [weightLogs, setWeightLogs] = useState<WeeklyWeightLog[]>([]);
@@ -51,34 +54,58 @@ export const ProgressScreen: React.FC = () => {
   const [compareBeforePhoto, setCompareBeforePhoto] = useState<ProgressPhoto | null>(null);
   const [compareAfterPhoto, setCompareAfterPhoto] = useState<ProgressPhoto | null>(null);
 
+  const loadLocalCache = async () => {
+    try {
+      const [token, cachedWeights, cachedGoal] = await Promise.all([
+        AsyncStorage.getItem('@moonfit_access_token'),
+        offlineStorage.getCachedWeightLogs(),
+        offlineStorage.getCachedGoal(),
+      ]);
+
+      if (token) setAuthToken(token);
+      if (cachedWeights && cachedWeights.length > 0) setWeightLogs(cachedWeights);
+      if (cachedGoal) setActiveGoal(cachedGoal);
+    } catch (e) {
+      console.warn('Error reading progress cache:', e);
+    }
+  };
+
   const loadData = async () => {
     try {
       const [token, wRes, pRes, gRes] = await Promise.all([
         AsyncStorage.getItem('@moonfit_access_token'),
-        progressApi.getWeightLogs().catch(() => ({ data: [] })),
-        progressApi.getPhotos().catch(() => ({ data: [] })),
-        goalsApi.getActiveGoal().catch(() => ({ data: undefined })),
+        progressApi.getWeightLogs().catch(() => ({ data: null })),
+        progressApi.getPhotos().catch(() => ({ data: null })),
+        goalsApi.getActiveGoal().catch(() => ({ data: null })),
       ]);
 
       if (token) setAuthToken(token);
-      if (wRes.data) setWeightLogs(wRes.data);
-      if (pRes.data) {
+      if (wRes.data && Array.isArray(wRes.data)) {
+        setWeightLogs(wRes.data);
+        await offlineStorage.saveCachedWeightLogs(wRes.data);
+      }
+      if (pRes.data && Array.isArray(pRes.data)) {
         setPhotos(pRes.data);
         if (pRes.data.length >= 2) {
           setCompareBeforePhoto(pRes.data[pRes.data.length - 1]);
           setCompareAfterPhoto(pRes.data[0]);
         }
       }
-      if (gRes.data) setActiveGoal(gRes.data);
+      if (gRes.data) {
+        setActiveGoal(gRes.data);
+        await offlineStorage.saveCachedGoal(gRes.data);
+      }
     } catch (e) {
-      console.error('Error cargando progreso:', e);
+      console.log('Modo offline activo en Progreso: usando datos cacheados');
     } finally {
       setRefreshing(false);
     }
   };
 
   useEffect(() => {
-    loadData();
+    loadLocalCache().then(() => {
+      loadData();
+    });
   }, []);
 
   const handleSaveWeight = async () => {
@@ -89,17 +116,48 @@ export const ProgressScreen: React.FC = () => {
 
     try {
       setSubmittingWeight(true);
-      await progressApi.logWeight({
-        weight_kg: Number(newWeight),
+      const weightNum = Number(newWeight);
+      const nowIso = new Date().toISOString();
+      const localLog: WeeklyWeightLog = {
+        id: Date.now(),
+        user_id: user?.id || '',
+        week_start_date: nowIso.split('T')[0],
+        weight_kg: weightNum,
         notes: newNotes.trim() || undefined,
-      });
+        logged_at: nowIso,
+        updated_at: nowIso,
+      };
+
+      // Guardar de inmediato en almacenamiento local para graficar al instante
+      const updatedList = await offlineStorage.appendLocalWeight(localLog);
+      setWeightLogs(updatedList);
+
+      if (isOnline) {
+        try {
+          await progressApi.logWeight({
+            weight_kg: weightNum,
+            notes: newNotes.trim() || undefined,
+          });
+        } catch (e) {
+          await enqueueAction('LOG_WEIGHT', {
+            weight_kg: weightNum,
+            notes: newNotes.trim() || undefined,
+            loggedAt: nowIso,
+          });
+        }
+      } else {
+        await enqueueAction('LOG_WEIGHT', {
+          weight_kg: weightNum,
+          notes: newNotes.trim() || undefined,
+          loggedAt: nowIso,
+        });
+      }
 
       showToast('¡Peso Registrado!', 'Se ha actualizado tu historial semanal.', 'success');
       triggerHaptic('success');
       setWeightModalVisible(false);
       setNewWeight('');
       setNewNotes('');
-      loadData();
     } catch (e: any) {
       showToast('Error al registrar', e.response?.data?.message || e.message, 'error');
     } finally {
@@ -125,25 +183,31 @@ export const ProgressScreen: React.FC = () => {
   };
 
   const uploadProgressPhoto = async (uri: string) => {
-    try {
-      showToast('Subiendo foto...', 'Cifrando y guardando en servidor.', 'info');
-      const formData = new FormData();
-      const filename = uri.split('/').pop() || 'progress.jpg';
-      const match = /\.(\w+)$/.exec(filename);
-      const type = match ? `image/${match[1]}` : `image/jpeg`;
+    if (isOnline) {
+      try {
+        showToast('Subiendo foto...', 'Cifrando y guardando en servidor.', 'info');
+        const formData = new FormData();
+        const filename = uri.split('/').pop() || 'progress.jpg';
+        const match = /\.(\w+)$/.exec(filename);
+        const type = match ? `image/${match[1]}` : `image/jpeg`;
 
-      formData.append('photo', {
-        uri,
-        name: filename,
-        type,
-      } as any);
+        formData.append('photo', {
+          uri,
+          name: filename,
+          type,
+        } as any);
 
-      await progressApi.uploadPhoto(formData);
-      showToast('¡Foto Guardada!', 'Se añadió a tu galería privada.', 'success');
-      triggerHaptic('success');
-      loadData();
-    } catch (e: any) {
-      showToast('Error al subir', e.message, 'error');
+        await progressApi.uploadPhoto(formData);
+        showToast('¡Foto Guardada!', 'Se añadió a tu galería privada.', 'success');
+        triggerHaptic('success');
+        loadData();
+      } catch (e: any) {
+        await enqueueAction('UPLOAD_PROGRESS_PHOTO', { localUri: uri });
+        showToast('Guardada en Cola', 'La foto se subirá automáticamente al reconectar internet.', 'info');
+      }
+    } else {
+      await enqueueAction('UPLOAD_PROGRESS_PHOTO', { localUri: uri });
+      showToast('Guardada en Cola', 'La foto se subirá automáticamente al reconectar internet.', 'info');
     }
   };
 
@@ -155,7 +219,7 @@ export const ProgressScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <Header title="Progreso Físico" subtitle="Evolución semanal y fotos privadas" />
+      <Header title="Progreso Físico" subtitle="Evolución semanal y fotos privadas" showSyncBadge={true} />
 
       <ScrollView
         style={styles.content}

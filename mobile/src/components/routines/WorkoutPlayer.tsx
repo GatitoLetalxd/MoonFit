@@ -7,11 +7,13 @@ import {
   ScrollView,
   Alert,
 } from 'react-native';
-import { Routine, RoutineExercise } from '../../types';
+import { Routine, RoutineExercise, WorkoutLog } from '../../types';
 import { ExerciseDemo } from './ExerciseDemo';
 import { getExerciseMetadata } from '../../utils/exerciseMetadata';
+import { offlineStorage } from '../../utils/offlineStorage';
 import { workoutsApi } from '../../api/services';
 import { useNotification } from '../../context/NotificationContext';
+import { useSync } from '../../context/SyncContext';
 import { theme } from '../../theme';
 import {
   Play,
@@ -134,24 +136,50 @@ export const WorkoutPlayer: React.FC<WorkoutPlayerProps> = ({
     }
   };
 
+  const { isOnline, enqueueAction } = useSync();
+
   const finishSession = async () => {
     const elapsed = Math.max(60, Math.round((Date.now() - startTimeRef.current) / 1000));
     setTotalSeconds(elapsed);
     setIsCompleted(true);
     triggerHaptic('success');
 
-    try {
-      await workoutsApi.log({
-        routine_id: routine.id,
-        status: 'COMPLETADA',
-        duration_seconds: elapsed,
-        exercises_completed: exercises.length,
-        total_exercises: exercises.length,
-      });
-      showToast('¡Entrenamiento Completado!', 'Sesión guardada en tu historial.', 'success');
-    } catch (e: any) {
-      showToast('Error al registrar', e.message, 'error');
+    const completedAt = new Date().toISOString();
+    const localLog: WorkoutLog = {
+      id: Date.now(),
+      user_id: '',
+      routine_id: routine.id,
+      routine,
+      status: 'COMPLETADA',
+      duration_seconds: elapsed,
+      exercises_completed: exercises.length,
+      total_exercises: exercises.length,
+      completed_at: completedAt,
+    };
+
+    // 1. Guardar de inmediato en almacenamiento local para racha e historial offline
+    await offlineStorage.appendLocalWorkout(localLog);
+
+    const payload = {
+      routine_id: routine.id,
+      status: 'COMPLETADA' as const,
+      duration_seconds: elapsed,
+      exercises_completed: exercises.length,
+      total_exercises: exercises.length,
+      completed_at: completedAt,
+    };
+
+    if (isOnline) {
+      try {
+        await workoutsApi.log(payload);
+      } catch (e: any) {
+        await enqueueAction('LOG_WORKOUT', payload);
+      }
+    } else {
+      await enqueueAction('LOG_WORKOUT', payload);
     }
+
+    showToast('¡Entrenamiento Completado!', 'Sesión guardada en tu historial.', 'success');
   };
 
   const handleCancel = () => {
@@ -170,18 +198,41 @@ export const WorkoutPlayer: React.FC<WorkoutPlayerProps> = ({
           {
             text: 'Guardar y Salir',
             onPress: async () => {
-              try {
-                await workoutsApi.log({
-                  routine_id: routine.id,
-                  status: 'CANCELADA',
-                  duration_seconds: elapsed,
-                  exercises_completed: currentExIndex,
-                  total_exercises: exercises.length,
-                });
-                showToast('Sesión guardada', 'Registrada como cancelada.', 'info');
-              } catch (e) {
-                console.error(e);
+              const completedAt = new Date().toISOString();
+              const localLog: WorkoutLog = {
+                id: Date.now(),
+                user_id: '',
+                routine_id: routine.id,
+                routine,
+                status: 'CANCELADA',
+                duration_seconds: elapsed,
+                exercises_completed: currentExIndex,
+                total_exercises: exercises.length,
+                completed_at: completedAt,
+              };
+
+              await offlineStorage.appendLocalWorkout(localLog);
+
+              const payload = {
+                routine_id: routine.id,
+                status: 'CANCELADA' as const,
+                duration_seconds: elapsed,
+                exercises_completed: currentExIndex,
+                total_exercises: exercises.length,
+                completed_at: completedAt,
+              };
+
+              if (isOnline) {
+                try {
+                  await workoutsApi.log(payload);
+                } catch (e) {
+                  await enqueueAction('LOG_WORKOUT', payload);
+                }
+              } else {
+                await enqueueAction('LOG_WORKOUT', payload);
               }
+
+              showToast('Sesión guardada', 'Registrada como cancelada.', 'info');
               onCancel();
             },
           },

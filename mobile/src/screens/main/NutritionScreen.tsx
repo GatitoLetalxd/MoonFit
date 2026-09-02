@@ -14,6 +14,8 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { Header } from '../../components/common/Header';
 import { useNotification } from '../../context/NotificationContext';
+import { useSync } from '../../context/SyncContext';
+import { offlineStorage } from '../../utils/offlineStorage';
 import { nutritionApi } from '../../api/services';
 import { Meal } from '../../types';
 import { theme } from '../../theme';
@@ -45,6 +47,7 @@ const FEELINGS = [
 
 export const NutritionScreen: React.FC = () => {
   const { showToast, triggerHaptic } = useNotification();
+  const { isOnline, enqueueAction } = useSync();
 
   const [meals, setMeals] = useState<Meal[]>([]);
   const [todayWaterMl, setTodayWaterMl] = useState<number>(0);
@@ -58,35 +61,61 @@ export const NutritionScreen: React.FC = () => {
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [submittingMeal, setSubmittingMeal] = useState<boolean>(false);
 
+  const loadLocalCache = async () => {
+    try {
+      const cachedWater = await offlineStorage.getCachedWater();
+      if (cachedWater && typeof cachedWater.total_ml === 'number') {
+        setTodayWaterMl(cachedWater.total_ml);
+      }
+    } catch (e) {
+      console.warn('Error reading water cache:', e);
+    }
+  };
+
   const loadData = async () => {
     try {
       const [mRes, wRes] = await Promise.all([
-        nutritionApi.getMeals().catch(() => ({ data: [] })),
-        nutritionApi.getTodayWater().catch(() => ({ data: { total_ml: 0 } })),
+        nutritionApi.getMeals().catch(() => ({ data: null })),
+        nutritionApi.getTodayWater().catch(() => ({ data: null })),
       ]);
 
-      if (mRes.data) setMeals(mRes.data);
-      if (wRes.data) setTodayWaterMl(wRes.data.total_ml);
+      if (mRes.data && Array.isArray(mRes.data)) {
+        setMeals(mRes.data);
+      }
+      if (wRes.data && typeof wRes.data.total_ml === 'number') {
+        setTodayWaterMl(wRes.data.total_ml);
+        await offlineStorage.saveCachedWater(wRes.data);
+      }
     } catch (e) {
-      console.error('Error cargando nutrición:', e);
+      console.log('Modo offline activo en Nutrición: usando datos locales');
     } finally {
       setRefreshing(false);
     }
   };
 
   useEffect(() => {
-    loadData();
+    loadLocalCache().then(() => {
+      loadData();
+    });
   }, []);
 
   const handleAddWater = async (ml: number) => {
     triggerHaptic('success');
-    try {
-      await nutritionApi.logWater(ml);
-      setTodayWaterMl((prev) => prev + ml);
-      showToast('¡Hidratación Sumada!', `+${ml} ml registrados con éxito.`, 'success');
-    } catch (e: any) {
-      showToast('Error', e.message, 'error');
+    // Actualización inmediata en UI y almacenamiento local
+    setTodayWaterMl((prev) => prev + ml);
+    await offlineStorage.addLocalWater(ml);
+
+    if (isOnline) {
+      try {
+        await nutritionApi.logWater(ml);
+      } catch (e: any) {
+        await enqueueAction('LOG_WATER', { amount_ml: ml, loggedAt: new Date().toISOString() });
+      }
+    } else {
+      await enqueueAction('LOG_WATER', { amount_ml: ml, loggedAt: new Date().toISOString() });
     }
+
+    showToast('¡Hidratación Sumada!', `+${ml} ml registrados con éxito.`, 'success');
   };
 
   const handlePickPhoto = async () => {
@@ -148,7 +177,7 @@ export const NutritionScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <Header title="Nutrición & Hábitos" subtitle="Registro simple en 3 clics y agua" />
+      <Header title="Nutrición & Hábitos" subtitle="Registro simple en 3 clics y agua" showSyncBadge={true} />
 
       <ScrollView
         style={styles.content}

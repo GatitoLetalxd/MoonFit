@@ -10,6 +10,7 @@ import {
 import { Header } from '../../components/common/Header';
 import { ExerciseDemo } from '../../components/routines/ExerciseDemo';
 import { RoutineDetailModal } from '../../components/routines/RoutineDetailModal';
+import { offlineStorage } from '../../utils/offlineStorage';
 import { routinesApi, workoutsApi } from '../../api/services';
 import { Routine, WorkoutLog } from '../../types';
 import { theme } from '../../theme';
@@ -32,37 +33,57 @@ export const RoutinesScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [selectedRoutine, setSelectedRoutine] = useState<Routine | null>(null);
 
+  const loadLocalCache = async () => {
+    try {
+      const [cachedRoutines, cachedWorkouts] = await Promise.all([
+        offlineStorage.getCachedRoutines(),
+        offlineStorage.getCachedWorkouts(),
+      ]);
+      if (cachedRoutines && cachedRoutines.length > 0) setRoutines(cachedRoutines);
+      if (cachedWorkouts && cachedWorkouts.length > 0) setWorkoutHistory(cachedWorkouts);
+    } catch (e) {
+      console.warn('Error reading routines cache:', e);
+    }
+  };
+
   const loadData = async () => {
     try {
       const [rRes, wRes] = await Promise.all([
-        routinesApi.getRoutines().catch(() => ({ data: [] })),
-        workoutsApi.getHistory().catch(() => ({ data: [] })),
+        routinesApi.getRoutines().catch(() => ({ data: null })),
+        workoutsApi.getHistory().catch(() => ({ data: null })),
       ]);
 
       if (rRes.data) {
+        let list: Routine[] = [];
         if (Array.isArray(rRes.data)) {
-          setRoutines(rRes.data);
+          list = rRes.data;
         } else if (typeof rRes.data === 'object') {
-          const combined = [
+          list = [
             ...((rRes.data as any).assigned || []),
             ...((rRes.data as any).userCreated || []),
             ...((rRes.data as any).predefined || []),
           ];
-          setRoutines(combined);
+        }
+        if (list.length > 0) {
+          setRoutines(list);
+          await offlineStorage.saveCachedRoutines(list);
         }
       }
       if (wRes.data && Array.isArray(wRes.data)) {
         setWorkoutHistory(wRes.data);
+        await offlineStorage.saveCachedWorkouts(wRes.data);
       }
     } catch (e) {
-      console.error('Error cargando rutinas:', e);
+      console.log('Offline mode in RoutinesScreen: using cached routines');
     } finally {
       setRefreshing(false);
     }
   };
 
   useEffect(() => {
-    loadData();
+    loadLocalCache().then(() => {
+      loadData();
+    });
   }, []);
 
   const safeRoutines = Array.isArray(routines) ? routines : [];
@@ -76,7 +97,7 @@ export const RoutinesScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
 
   return (
     <View style={styles.container}>
-      <Header title="Rutinas de Ejercicio" subtitle="35 ejercicios en casa sin equipamiento" />
+      <Header title="Rutinas de Ejercicio" subtitle="35 ejercicios en casa sin equipamiento" showSyncBadge={true} />
 
       {/* Category Pills Filter */}
       <View style={styles.filterContainer}>

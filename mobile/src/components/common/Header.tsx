@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity } from 'react-native';
 import { theme } from '../../theme';
 import { ArrowLeft } from 'lucide-react-native';
+import { SyncBadge } from './SyncBadge';
 
 interface HeaderProps {
   title?: string;
@@ -9,6 +10,7 @@ interface HeaderProps {
   showBack?: boolean;
   onBack?: () => void;
   rightAction?: React.ReactNode;
+  showSyncBadge?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -17,6 +19,7 @@ export const Header: React.FC<HeaderProps> = ({
   showBack = false,
   onBack,
   rightAction,
+  showSyncBadge = false,
 }) => {
   return (
     <View style={styles.container}>
@@ -45,7 +48,10 @@ export const Header: React.FC<HeaderProps> = ({
           {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
         </View>
       </View>
-      {rightAction ? <View style={styles.right}>{rightAction}</View> : null}
+      <View style={styles.right}>
+        {showSyncBadge && <SyncBadge />}
+        {rightAction ? <View style={{ marginLeft: showSyncBadge ? 8 : 0 }}>{rightAction}</View> : null}
+      </View>
     </View>
   );
 };

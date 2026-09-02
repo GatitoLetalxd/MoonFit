@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { User } from '../types';
 import { authApi } from '../api/services';
+import { offlineStorage } from '../utils/offlineStorage';
 
 interface AuthContextType {
   user: User | null;
@@ -94,6 +95,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = async () => {
     await AsyncStorage.multiRemove(['@moonfit_access_token', '@moonfit_refresh_token', '@moonfit_user']);
+    await offlineStorage.clearAllCache();
     setUser(null);
   };
 

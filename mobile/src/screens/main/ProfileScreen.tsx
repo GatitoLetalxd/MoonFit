@@ -16,6 +16,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { Header } from '../../components/common/Header';
 import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
+import { useSync } from '../../context/SyncContext';
+import { offlineStorage } from '../../utils/offlineStorage';
 import { remindersApi, goalsApi, usersApi } from '../../api/services';
 import { scheduleLocalReminder, sendTestNotificationNow } from '../../utils/notifications';
 import { Goal, Reminder } from '../../types';
@@ -55,6 +57,7 @@ const QUICK_TIME_PRESETS = [
 export const ProfileScreen: React.FC = () => {
   const { user, logout, updateUserLocal } = useAuth();
   const { showToast, triggerHaptic } = useNotification();
+  const { isOnline, enqueueAction } = useSync();
 
   const [activeGoal, setActiveGoal] = useState<Goal | null>(null);
   const [reminders, setReminders] = useState<Reminder[]>([]);
@@ -108,24 +111,41 @@ export const ProfileScreen: React.FC = () => {
         updateUserLocal(res.data);
         setAvatarTimestamp(Date.now());
         showToast('¡Foto Guardada!', 'Tu foto de perfil se actualizó con compresión optimizada.', 'success');
-        triggerHaptic('success');
       }
     } catch (e: any) {
-      showToast('Error al subir foto', e.message, 'error');
+      showToast('Error al subir', e.message, 'error');
     } finally {
       setUploadingAvatar(false);
+    }
+  };
+
+  const loadLocalCache = async () => {
+    try {
+      const [cachedGoal, cachedReminders] = await Promise.all([
+        offlineStorage.getCachedGoal(),
+        offlineStorage.getCachedReminders(),
+      ]);
+
+      if (cachedGoal) setActiveGoal(cachedGoal);
+      if (cachedReminders && cachedReminders.length > 0) setReminders(cachedReminders);
+    } catch (e) {
+      console.warn('Error reading profile cache:', e);
     }
   };
 
   const loadData = async () => {
     try {
       const [gRes, rRes] = await Promise.all([
-        goalsApi.getActiveGoal().catch(() => ({ data: undefined })),
-        remindersApi.getReminders().catch(() => ({ data: [] })),
+        goalsApi.getActiveGoal().catch(() => ({ data: null })),
+        remindersApi.getReminders().catch(() => ({ data: null })),
       ]);
 
-      if (gRes.data) setActiveGoal(gRes.data);
-      if (rRes.data) {
+      if (gRes.data) {
+        setActiveGoal(gRes.data);
+        await offlineStorage.saveCachedGoal(gRes.data);
+      }
+
+      if (rRes.data && Array.isArray(rRes.data)) {
         if (rRes.data.length === 0) {
           // Crear recordatorios por defecto si no existen
           const defaultRem = await remindersApi.createReminder({
@@ -136,38 +156,50 @@ export const ProfileScreen: React.FC = () => {
           }).catch(() => null);
           if (defaultRem?.data) {
             setReminders([defaultRem.data]);
+            await offlineStorage.saveCachedReminders([defaultRem.data]);
             scheduleLocalReminder('entrenar', '08:00');
           }
         } else {
           setReminders(rRes.data);
+          await offlineStorage.saveCachedReminders(rRes.data);
         }
       }
     } catch (e) {
-      console.error('Error cargando perfil:', e);
+      console.log('Modo offline en Perfil: usando recordatorios cacheados');
     }
   };
 
   useEffect(() => {
-    loadData();
+    loadLocalCache().then(() => {
+      loadData();
+    });
   }, []);
 
   const handleToggleReminder = async (rem: Reminder) => {
     triggerHaptic('light');
-    try {
-      const newActive = !rem.active;
-      await remindersApi.updateReminder(rem.id, { active: newActive });
-      setReminders((prev) =>
-        prev.map((r) => (r.id === rem.id ? { ...r, active: newActive } : r))
-      );
+    const newActive = !rem.active;
 
-      if (newActive) {
-        await scheduleLocalReminder(rem.type, rem.time);
-        showToast('Alarma Activada', `Recordatorio programado a las ${rem.time} con sonido y banner en pantalla.`, 'success');
-      } else {
-        showToast('Alarma Desactivada', `Recordatorio pausado.`, 'info');
+    // Actualización inmediata en UI y almacenamiento local
+    setReminders((prev) =>
+      prev.map((r) => (r.id === rem.id ? { ...r, active: newActive } : r))
+    );
+    await offlineStorage.updateLocalReminder(rem.id, { active: newActive });
+
+    if (newActive) {
+      await scheduleLocalReminder(rem.type, rem.time);
+      showToast('Alarma Activada', `Recordatorio programado a las ${rem.time} con sonido y banner en pantalla.`, 'success');
+    } else {
+      showToast('Alarma Desactivada', `Recordatorio pausado.`, 'info');
+    }
+
+    if (isOnline) {
+      try {
+        await remindersApi.updateReminder(rem.id, { active: newActive });
+      } catch (e) {
+        await enqueueAction('UPDATE_REMINDER', { id: rem.id, data: { active: newActive } });
       }
-    } catch (e: any) {
-      showToast('Error', e.message, 'error');
+    } else {
+      await enqueueAction('UPDATE_REMINDER', { id: rem.id, data: { active: newActive } });
     }
   };
 
@@ -189,26 +221,37 @@ export const ProfileScreen: React.FC = () => {
     const m = String(Math.min(59, Math.max(0, parseInt(customMinute, 10) || 0))).padStart(2, '0');
     const finalTime = `${h}:${m}`;
 
-    try {
-      await remindersApi.updateReminder(editingReminder.id, {
-        time: finalTime,
-        active: true,
+    setReminders((prev) =>
+      prev.map((r) => (r.id === editingReminder.id ? { ...r, time: finalTime, active: true } : r))
+    );
+    await offlineStorage.updateLocalReminder(editingReminder.id, { time: finalTime, active: true });
+
+    await scheduleLocalReminder(editingReminder.type, finalTime);
+    triggerHaptic('success');
+    showToast(
+      '¡Alarma Programada!',
+      `Tu recordatorio sonará todos los días a las ${finalTime}.`,
+      'success'
+    );
+    setTimeModalVisible(false);
+
+    if (isOnline) {
+      try {
+        await remindersApi.updateReminder(editingReminder.id, {
+          time: finalTime,
+          active: true,
+        });
+      } catch (e) {
+        await enqueueAction('UPDATE_REMINDER', {
+          id: editingReminder.id,
+          data: { time: finalTime, active: true },
+        });
+      }
+    } else {
+      await enqueueAction('UPDATE_REMINDER', {
+        id: editingReminder.id,
+        data: { time: finalTime, active: true },
       });
-
-      setReminders((prev) =>
-        prev.map((r) => (r.id === editingReminder.id ? { ...r, time: finalTime, active: true } : r))
-      );
-
-      await scheduleLocalReminder(editingReminder.type, finalTime);
-      triggerHaptic('success');
-      showToast(
-        '¡Alarma Programada!',
-        `Tu recordatorio sonará todos los días a las ${finalTime}.`,
-        'success'
-      );
-      setTimeModalVisible(false);
-    } catch (e: any) {
-      showToast('Error', e.message, 'error');
     }
   };
 
@@ -270,7 +313,7 @@ export const ProfileScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <Header title="Mi Perfil & Ajustes" subtitle="Configuración de cuenta y alarmas" />
+      <Header title="Mi Perfil & Ajustes" subtitle="Configuración de cuenta y alarmas" showSyncBadge={true} />
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* User Card */}

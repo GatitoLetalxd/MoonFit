@@ -8,7 +8,9 @@ import {
   RefreshControl,
 } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
+import { useSync } from '../../context/SyncContext';
 import { useNotification } from '../../context/NotificationContext';
+import { offlineStorage } from '../../utils/offlineStorage';
 import { Header } from '../../components/common/Header';
 import { RoutineDetailModal } from '../../components/routines/RoutineDetailModal';
 import { routinesApi, workoutsApi, nutritionApi, goalsApi } from '../../api/services';
@@ -49,6 +51,7 @@ const getLocalDayIndex = (): number => {
 export const DashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const { user } = useAuth();
   const { showToast, triggerHaptic } = useNotification();
+  const { isOnline, enqueueAction } = useSync();
 
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [routines, setRoutines] = useState<Routine[]>([]);
@@ -63,32 +66,68 @@ export const DashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) =
   // Selected routine for modal preview
   const [selectedRoutine, setSelectedRoutine] = useState<Routine | null>(null);
 
+  // 1. Cargar caché local de forma instantánea (0ms)
+  const loadLocalCache = async () => {
+    try {
+      const [cachedRoutines, cachedWorkouts, cachedWater, cachedGoal] = await Promise.all([
+        offlineStorage.getCachedRoutines(),
+        offlineStorage.getCachedWorkouts(),
+        offlineStorage.getCachedWater(),
+        offlineStorage.getCachedGoal(),
+      ]);
+
+      if (cachedRoutines && cachedRoutines.length > 0) setRoutines(cachedRoutines);
+      if (cachedWorkouts && cachedWorkouts.length > 0) setWorkoutHistory(cachedWorkouts);
+      if (cachedWater && typeof cachedWater.total_ml === 'number') setTodayWaterMl(cachedWater.total_ml);
+      if (cachedGoal) setActiveGoal(cachedGoal);
+    } catch (e) {
+      console.warn('Error cargando caché local del dashboard:', e);
+    }
+  };
+
+  // 2. Refrescar datos desde la API si hay internet y actualizar caché
   const loadData = async () => {
     try {
       const [rRes, wRes, waterRes, gRes] = await Promise.all([
-        routinesApi.getRoutines().catch(() => ({ data: [] })),
-        workoutsApi.getHistory().catch(() => ({ data: [] })),
-        nutritionApi.getTodayWater().catch(() => ({ data: { total_ml: 0 } })),
-        goalsApi.getActiveGoal().catch(() => ({ data: undefined })),
+        routinesApi.getRoutines().catch(() => ({ data: null })),
+        workoutsApi.getHistory().catch(() => ({ data: null })),
+        nutritionApi.getTodayWater().catch(() => ({ data: null })),
+        goalsApi.getActiveGoal().catch(() => ({ data: null })),
       ]);
 
       if (rRes.data) {
+        let list: Routine[] = [];
         if (Array.isArray(rRes.data)) {
-          setRoutines(rRes.data);
+          list = rRes.data;
         } else if (typeof rRes.data === 'object') {
-          const combined = [
+          list = [
             ...((rRes.data as any).assigned || []),
             ...((rRes.data as any).userCreated || []),
             ...((rRes.data as any).predefined || []),
           ];
-          setRoutines(combined);
+        }
+        if (list.length > 0) {
+          setRoutines(list);
+          await offlineStorage.saveCachedRoutines(list);
         }
       }
-      if (wRes.data && Array.isArray(wRes.data)) setWorkoutHistory(wRes.data);
-      if (waterRes.data && typeof waterRes.data.total_ml === 'number') setTodayWaterMl(waterRes.data.total_ml);
-      if (gRes.data) setActiveGoal(gRes.data);
+
+      if (wRes.data && Array.isArray(wRes.data)) {
+        setWorkoutHistory(wRes.data);
+        await offlineStorage.saveCachedWorkouts(wRes.data);
+      }
+
+      if (waterRes.data && typeof waterRes.data.total_ml === 'number') {
+        setTodayWaterMl(waterRes.data.total_ml);
+        await offlineStorage.saveCachedWater(waterRes.data);
+      }
+
+      if (gRes.data) {
+        setActiveGoal(gRes.data);
+        await offlineStorage.saveCachedGoal(gRes.data);
+      }
     } catch (e) {
-      console.error('Error cargando datos del dashboard:', e);
+      console.log('Modo offline activo: usando datos cacheados');
     } finally {
       setRefreshing(false);
     }
@@ -96,18 +135,28 @@ export const DashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) =
 
   useEffect(() => {
     setSelectedDayIndex(getLocalDayIndex());
-    loadData();
+    loadLocalCache().then(() => {
+      loadData();
+    });
   }, []);
 
   const handleAddWater = async (ml: number) => {
     triggerHaptic('success');
-    try {
-      await nutritionApi.logWater(ml);
-      setTodayWaterMl((prev) => prev + ml);
-      showToast('¡Hidratación Registrada!', `+${ml} ml añadidos a tu meta de hoy.`, 'success');
-    } catch (e: any) {
-      showToast('Error', e.message, 'error');
+    // Actualización inmediata en UI y almacenamiento local
+    setTodayWaterMl((prev) => prev + ml);
+    await offlineStorage.addLocalWater(ml);
+
+    if (isOnline) {
+      try {
+        await nutritionApi.logWater(ml);
+      } catch (e: any) {
+        await enqueueAction('LOG_WATER', { amount_ml: ml, loggedAt: new Date().toISOString() });
+      }
+    } else {
+      await enqueueAction('LOG_WATER', { amount_ml: ml, loggedAt: new Date().toISOString() });
     }
+
+    showToast('¡Hidratación Registrada!', `+${ml} ml añadidos a tu meta de hoy.`, 'success');
   };
 
   // Cálculo de racha activa usando fecha local del dispositivo
@@ -183,7 +232,7 @@ export const DashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) =
 
   return (
     <View style={styles.container}>
-      <Header />
+      <Header showSyncBadge={true} />
 
       <ScrollView
         style={styles.content}

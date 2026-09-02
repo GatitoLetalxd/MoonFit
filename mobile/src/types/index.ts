@@ -115,9 +115,25 @@ export interface Reminder {
   updated_at: string;
 }
 
+export type SyncActionType =
+  | 'LOG_WORKOUT'
+  | 'LOG_WATER'
+  | 'LOG_WEIGHT'
+  | 'UPDATE_REMINDER'
+  | 'UPLOAD_PROGRESS_PHOTO';
+
+export interface SyncQueueItem {
+  id: string;
+  type: SyncActionType;
+  payload: any;
+  created_at: string;
+  retry_count: number;
+}
+
 export interface ApiResponse<T> {
   status: 'success' | 'error';
   data?: T;
   message?: string;
   errors?: any[];
 }
+
