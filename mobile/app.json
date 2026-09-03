@@ -30,6 +30,7 @@
         "android.permission.VIBRATE",
         "android.permission.SCHEDULE_EXACT_ALARM"
       ],
+      "usesCleartextTraffic": true,
       "predictiveBackGestureEnabled": false
     },
     "web": {

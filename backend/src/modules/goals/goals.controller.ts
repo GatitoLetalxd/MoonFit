@@ -30,6 +30,15 @@ export class GoalsController {
     }
   }
 
+  async getActive(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const goal = await goalsService.getActiveGoal(req.user!.id);
+      sendSuccess(res, goal, 'Meta activa obtenida');
+    } catch (error: any) {
+      sendError(res, error.message, 400);
+    }
+  }
+
   async update(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const goalId = parseInt(String(req.params.id), 10);

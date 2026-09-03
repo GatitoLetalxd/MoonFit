@@ -163,8 +163,15 @@ export const RoutinesScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
           <View style={styles.historyHeader}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <Clock size={20} color={theme.colors.primary} />
-              <Text style={styles.historyTitle}>Historial de Entrenamientos ({workoutHistory.length})</Text>
+              <Text style={styles.historyTitle}>Historial ({workoutHistory.length})</Text>
             </View>
+            <TouchableOpacity
+              onPress={() => navigation.navigate('WorkoutHistory')}
+              style={styles.viewAllHistoryBtn}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={styles.viewAllHistoryBtnText}>Ver Completo →</Text>
+            </TouchableOpacity>
           </View>
 
           {workoutHistory.length === 0 ? (
@@ -355,12 +362,28 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   historyHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 12,
   },
   historyTitle: {
     fontSize: 15,
     fontWeight: '800',
     color: '#fff',
+  },
+  viewAllHistoryBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: 'rgba(6, 182, 212, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(6, 182, 212, 0.25)',
+  },
+  viewAllHistoryBtnText: {
+    color: theme.colors.primary,
+    fontSize: 11,
+    fontWeight: '800',
   },
   emptyHistoryBox: {
     padding: 24,

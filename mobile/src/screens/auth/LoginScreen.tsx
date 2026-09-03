@@ -11,17 +11,20 @@ import {
   Platform,
   ScrollView,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
 import { theme } from '../../theme';
-import { Mail, Lock, LogIn, ArrowRight } from 'lucide-react-native';
+import { Mail, Lock, LogIn, ArrowRight, Eye, EyeOff } from 'lucide-react-native';
 
 export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
+  const insets = useSafeAreaInsets();
   const { login } = useAuth();
   const { showToast } = useNotification();
 
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
+  const [showPassword, setShowPassword] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
 
   const handleLogin = async () => {
@@ -41,17 +44,24 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     }
   };
 
-  const handleQuickDemo = () => {
-    setEmail('rogeeromontufar@gmail.com');
-    setPassword('password');
-  };
-
   return (
     <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
     >
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.scrollContent,
+          {
+            paddingTop: Math.max(insets.top + 16, 24),
+            paddingBottom: Math.max(insets.bottom + 24, 40),
+          },
+        ]}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+      >
         {/* Brand Header */}
         <View style={styles.brandHeader}>
           <Image
@@ -92,13 +102,24 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
             <View style={styles.inputWrapper}>
               <Lock size={18} color={theme.colors.textDim} style={styles.inputIcon} />
               <TextInput
-                style={styles.input}
+                style={[styles.input, { paddingRight: 40 }]}
                 placeholder="••••••••"
                 placeholderTextColor={theme.colors.textDim}
-                secureTextEntry
+                secureTextEntry={!showPassword}
                 value={password}
                 onChangeText={setPassword}
               />
+              <TouchableOpacity
+                style={styles.eyeBtn}
+                onPress={() => setShowPassword((prev) => !prev)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                {showPassword ? (
+                  <EyeOff size={18} color={theme.colors.primary} />
+                ) : (
+                  <Eye size={18} color={theme.colors.textDim} />
+                )}
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -116,11 +137,6 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                 <Text style={styles.submitBtnText}>Entrar a MoonFit</Text>
               </>
             )}
-          </TouchableOpacity>
-
-          {/* Quick Demo */}
-          <TouchableOpacity style={styles.demoBtn} onPress={handleQuickDemo}>
-            <Text style={styles.demoBtnText}>⚡ Rellenar Credenciales Demo</Text>
           </TouchableOpacity>
         </View>
 
@@ -144,7 +160,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: 24,
     justifyContent: 'center',
-    minHeight: '100%',
+    flexGrow: 1,
   },
   brandHeader: {
     alignItems: 'center',
@@ -211,6 +227,11 @@ const styles = StyleSheet.create({
     height: 48,
     color: '#fff',
     fontSize: 15,
+  },
+  eyeBtn: {
+    padding: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   submitBtn: {
     flexDirection: 'row',

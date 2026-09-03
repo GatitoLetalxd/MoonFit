@@ -7,6 +7,9 @@ import { RegisterScreen } from '../screens/auth/RegisterScreen';
 import { OnboardingScreen } from '../screens/onboarding/OnboardingScreen';
 import { MainTabNavigator } from './MainTabNavigator';
 import { WorkoutPlayerScreen } from '../screens/main/WorkoutPlayerScreen';
+import { WorkoutHistoryScreen } from '../screens/main/WorkoutHistoryScreen';
+import { AdminUsersScreen } from '../screens/admin/AdminUsersScreen';
+import { AdminUserDetailScreen } from '../screens/admin/AdminUserDetailScreen';
 import { theme } from '../theme';
 
 const Stack = createNativeStackNavigator();
@@ -47,6 +50,9 @@ export const RootNavigator: React.FC = () => {
             component={WorkoutPlayerScreen}
             options={{ presentation: 'fullScreenModal' }}
           />
+          <Stack.Screen name="WorkoutHistory" component={WorkoutHistoryScreen} />
+          <Stack.Screen name="AdminUsers" component={AdminUsersScreen} />
+          <Stack.Screen name="AdminUserDetail" component={AdminUserDetailScreen} />
         </>
       )}
     </Stack.Navigator>

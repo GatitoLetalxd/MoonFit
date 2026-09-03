@@ -13,6 +13,8 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
+import * as MediaLibrary from 'expo-media-library';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Header } from '../../components/common/Header';
 import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
@@ -30,6 +32,9 @@ import {
   Layers,
   X,
   CheckCircle2,
+  Sparkles,
+  Download,
+  Maximize2,
 } from 'lucide-react-native';
 
 export const ProgressScreen: React.FC = () => {
@@ -42,6 +47,10 @@ export const ProgressScreen: React.FC = () => {
   const [photos, setPhotos] = useState<ProgressPhoto[]>([]);
   const [activeGoal, setActiveGoal] = useState<Goal | null>(null);
   const [refreshing, setRefreshing] = useState<boolean>(false);
+
+  // Visor de foto en grande
+  const [selectedPhoto, setSelectedPhoto] = useState<ProgressPhoto | null>(null);
+  const [savingToGallery, setSavingToGallery] = useState<boolean>(false);
 
   // Modal registrar peso
   const [weightModalVisible, setWeightModalVisible] = useState<boolean>(false);
@@ -211,6 +220,40 @@ export const ProgressScreen: React.FC = () => {
     }
   };
 
+  const handleSavePhotoToGallery = async (photo: ProgressPhoto) => {
+    try {
+      triggerHaptic('light');
+      setSavingToGallery(true);
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status !== 'granted') {
+        showToast('Permiso Denegado', 'Se requiere permiso para guardar fotos en tu galería.', 'warning');
+        setSavingToGallery(false);
+        return;
+      }
+
+      showToast('Descargando...', 'Preparando imagen para tu galería.', 'info');
+      const photoUrl = progressApi.getPhotoViewUrl(photo.id, authToken);
+      const filename = `moonfit_progreso_${Date.now()}.jpg`;
+      const fileUri = `${FileSystem.documentDirectory}${filename}`;
+
+      const res = await FileSystem.downloadAsync(photoUrl, fileUri, {
+        headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined,
+      });
+
+      if (res.status === 200) {
+        await MediaLibrary.saveToLibraryAsync(res.uri);
+        triggerHaptic('success');
+        showToast('¡Guardada en Galería!', 'La foto se guardó exitosamente en tu teléfono.', 'success');
+      } else {
+        showToast('Error', 'No se pudo descargar la imagen.', 'error');
+      }
+    } catch (e: any) {
+      showToast('Error al guardar', e.message || 'No se pudo guardar la foto', 'error');
+    } finally {
+      setSavingToGallery(false);
+    }
+  };
+
   const latestWeight = weightLogs[0]?.weight_kg || user?.initial_weight_kg || 0;
   const initialWeight = user?.initial_weight_kg || latestWeight;
   const targetWeight = activeGoal?.target_weight_kg || 0;
@@ -247,6 +290,17 @@ export const ProgressScreen: React.FC = () => {
               <Text style={styles.kpiSub}>Objetivo</Text>
             </View>
           )}
+        </View>
+
+        {/* Reassurance Banner */}
+        <View style={styles.reassuranceBanner}>
+          <Sparkles size={18} color={theme.colors.accent} style={{ marginTop: 2 }} />
+          <View style={{ flex: 1, marginLeft: 10 }}>
+            <Text style={styles.reassuranceTitle}>El progreso real no es una línea recta</Text>
+            <Text style={styles.reassuranceText}>
+              El peso varía a diario por hidratación, digestión y recuperación muscular. Si tu fuerza aumenta o tu ropa te queda mejor, tu recomposición corporal va por excelente camino.
+            </Text>
+          </View>
         </View>
 
         {/* Action Button: Register Weight */}
@@ -305,7 +359,15 @@ export const ProgressScreen: React.FC = () => {
           {photos.length > 0 && (
             <View style={styles.photosGrid}>
               {photos.map((p) => (
-                <View key={p.id} style={styles.photoThumbnailWrapper}>
+                <TouchableOpacity
+                  key={p.id}
+                  style={styles.photoThumbnailWrapper}
+                  onPress={() => {
+                    triggerHaptic('light');
+                    setSelectedPhoto(p);
+                  }}
+                  activeOpacity={0.8}
+                >
                   <Image
                     source={{
                       uri: progressApi.getPhotoViewUrl(p.id, authToken),
@@ -313,10 +375,13 @@ export const ProgressScreen: React.FC = () => {
                     }}
                     style={styles.photoThumbnail}
                   />
+                  <View style={styles.zoomBadge}>
+                    <Maximize2 size={12} color="#fff" />
+                  </View>
                   <Text style={styles.photoDate}>
                     {new Date(p.taken_at).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}
                   </Text>
-                </View>
+                </TouchableOpacity>
               ))}
             </View>
           )}
@@ -420,6 +485,66 @@ export const ProgressScreen: React.FC = () => {
           </View>
         </View>
       </Modal>
+
+      {/* Modal: Ver Foto en Grande y Guardar en Galería */}
+      <Modal visible={!!selectedPhoto} transparent animationType="fade">
+        <View style={styles.photoModalOverlay}>
+          <View style={styles.photoModalContent}>
+            <View style={styles.photoModalHeader}>
+              <View>
+                <Text style={styles.photoModalTitle}>FOTO DE PROGRESO</Text>
+                {selectedPhoto && (
+                  <Text style={styles.photoModalDate}>
+                    Tomada el {new Date(selectedPhoto.taken_at).toLocaleDateString('es-ES', {
+                      weekday: 'long',
+                      day: 'numeric',
+                      month: 'long',
+                      year: 'numeric',
+                    })}
+                  </Text>
+                )}
+              </View>
+              <TouchableOpacity
+                onPress={() => setSelectedPhoto(null)}
+                style={styles.closeModalBtn}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <X size={20} color="#fff" />
+              </TouchableOpacity>
+            </View>
+
+            {selectedPhoto && (
+              <View style={styles.largeImageContainer}>
+                <Image
+                  source={{
+                    uri: progressApi.getPhotoViewUrl(selectedPhoto.id, authToken),
+                    headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined,
+                  }}
+                  style={styles.largeImage}
+                  resizeMode="contain"
+                />
+              </View>
+            )}
+
+            {selectedPhoto && (
+              <TouchableOpacity
+                style={styles.saveGalleryBtn}
+                onPress={() => handleSavePhotoToGallery(selectedPhoto)}
+                disabled={savingToGallery}
+              >
+                {savingToGallery ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <>
+                    <Download size={18} color="#fff" />
+                    <Text style={styles.saveGalleryBtnText}>Guardar en Galería del Teléfono</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -438,6 +563,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 10,
     marginBottom: 16,
+  },
+  reassuranceBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: 'rgba(23, 31, 48, 0.7)',
+    borderRadius: theme.radius.md,
+    padding: 14,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(249, 115, 22, 0.3)',
+  },
+  reassuranceTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: theme.colors.accent,
+    marginBottom: 4,
+  },
+  reassuranceText: {
+    fontSize: 12,
+    color: theme.colors.textMuted,
+    lineHeight: 18,
   },
   kpiCard: {
     flex: 1,
@@ -669,5 +815,82 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: theme.colors.textMuted,
     marginTop: 6,
+  },
+  zoomBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    borderRadius: 12,
+    padding: 4,
+  },
+  photoModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.92)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+  },
+  photoModalContent: {
+    width: '100%',
+    maxHeight: '92%',
+    backgroundColor: '#111827',
+    borderRadius: theme.radius.xl,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  photoModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  photoModalTitle: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: '#fff',
+    letterSpacing: 1,
+  },
+  photoModalDate: {
+    fontSize: 12,
+    color: theme.colors.textMuted,
+    marginTop: 2,
+    textTransform: 'capitalize',
+  },
+  closeModalBtn: {
+    padding: 6,
+    borderRadius: theme.radius.full,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  largeImageContainer: {
+    width: '100%',
+    height: 380,
+    backgroundColor: '#000',
+    borderRadius: theme.radius.lg,
+    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    marginBottom: 16,
+  },
+  largeImage: {
+    width: '100%',
+    height: '100%',
+  },
+  saveGalleryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: theme.colors.primaryDark,
+    borderRadius: theme.radius.md,
+    paddingVertical: 14,
+  },
+  saveGalleryBtnText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '800',
   },
 });

@@ -105,7 +105,7 @@
   - Configuración de hora y frecuencia (diaria, semanal).
   - Switch de activación/desactivación rápida.
 - [-] ⏳ **Notificaciones en navegador (Web Notifications API)**: Notificaciones visuales en la aplicación web.
-- [ ] ⚪ **Notificaciones locales nativas en dispositivo móvil**: Disparo local en segundo plano con acciones Aceptar / Posponer (+30 min) mediante React Native/Expo.
+- [x] ✅ **Notificaciones locales nativas en dispositivo móvil**: Disparo local en segundo plano con acciones Aceptar / Posponer (+30 min) mediante React Native/Expo (`expo-notifications`).
 
 ---
 
@@ -136,4 +136,4 @@
 - [x] ✅ **Diseño UI/UX de Alta Gama**: Estética atlética oscura (*Dark Luxury Glassmorphism*), paleta HSL balanceada, tipografía Inter y Outfit, microanimaciones CSS y confetti al completar logros.
 - [x] ✅ **Seguridad de Datos**: Contraseñas hasheadas con bcrypt (10 rounds), validación de tipos en TypeScript, aislamiento de rutas privadas y fotos protegidas contra accesos directos.
 - [x] ✅ **Base de Datos Relacional**: PostgreSQL con Prisma ORM, tipos fuertemente tipados, índices en claves foráneas y relaciones con borrado en cascada.
-- [ ] ⚪ **App Móvil Nativa (React Native / Expo)**: Creación del proyecto móvil y generación del instalador APK autónomo al concluir la fase web.
+- [x] ✅ **App Móvil Nativa (React Native / Expo) & Soporte Offline-First**: Aplicación móvil autónoma para Android compilada en APK con motor de sincronización de fondo, caché local en AsyncStorage y persistencia completa sin internet.

@@ -2,6 +2,7 @@ import { prisma } from '../../config/db';
 import { getMondayOfWeek } from '../../utils/date';
 import path from 'path';
 import fs from 'fs';
+import sharp from 'sharp';
 import { env } from '../../config/env';
 import { Role } from '@prisma/client';
 
@@ -68,11 +69,39 @@ export class ProgressService {
     });
   }
 
-  async saveProgressPhoto(userId: string, filename: string, takenAt?: string) {
+  async saveProgressPhoto(userId: string, rawFilename: string, takenAt?: string) {
+    const progressDir = path.join(env.resolvedStoragePath, 'progress');
+    if (!fs.existsSync(progressDir)) {
+      fs.mkdirSync(progressDir, { recursive: true });
+    }
+
+    const rawFilePath = path.join(progressDir, rawFilename);
+    const optimizedFilename = `${path.parse(rawFilename).name}_opt.webp`;
+    const optimizedFilePath = path.join(progressDir, optimizedFilename);
+
+    let finalStoragePath = `progress/${rawFilename}`;
+
+    if (fs.existsSync(rawFilePath)) {
+      try {
+        await sharp(rawFilePath)
+          .resize(1280, 1280, { fit: 'inside', withoutEnlargement: true })
+          .webp({ quality: 80 })
+          .toFile(optimizedFilePath);
+
+        // Remove raw uploaded file to save disk space
+        if (rawFilePath !== optimizedFilePath && fs.existsSync(rawFilePath)) {
+          fs.unlinkSync(rawFilePath);
+        }
+        finalStoragePath = `progress/${optimizedFilename}`;
+      } catch (err) {
+        console.warn('Error compressing progress photo with sharp, using original:', err);
+      }
+    }
+
     const photo = await prisma.progressPhoto.create({
       data: {
         user_id: userId,
-        storage_path: `progress/${filename}`,
+        storage_path: finalStoragePath,
         taken_at: takenAt ? new Date(takenAt) : new Date(),
       },
     });

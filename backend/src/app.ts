@@ -2,6 +2,8 @@ import express, { Express, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import compression from 'compression';
+import rateLimit from 'express-rate-limit';
 import { logger } from './config/logger';
 import { errorHandler } from './middlewares/error.middleware';
 import { sendError, sendSuccess } from './utils/response';
@@ -19,6 +21,9 @@ import remindersRoutes from './modules/reminders/reminders.routes';
 
 export const app: Express = express();
 
+// HTTP Response Compression (Gzip / Brotli)
+app.use(compression());
+
 // Security Middlewares
 app.use(
   helmet({
@@ -32,6 +37,32 @@ app.use(
     allowedHeaders: ['Content-Type', 'Authorization'],
   })
 );
+
+// General Rate Limiter (Protege CPU y RAM del VPS contra sobrecarga)
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutos
+  max: 300, // Límite de 300 peticiones por ventana por IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'Demasiadas solicitudes desde esta IP. Por favor intenta más tarde.',
+  },
+});
+app.use('/api', generalLimiter);
+
+// Rate Limiter estricto para inicio de sesión (Previene ataques de fuerza bruta)
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutos
+  max: 15, // 15 intentos por ventana
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'Demasiados intentos de acceso. Espera 15 minutos antes de volver a intentar.',
+  },
+});
+app.use('/api/auth/login', authLimiter);
 
 // Body Parsers
 app.use(express.json({ limit: '10mb' }));

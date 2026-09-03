@@ -7,6 +7,7 @@ import {
   ScrollView,
   Alert,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Routine, RoutineExercise, WorkoutLog } from '../../types';
 import { ExerciseDemo } from './ExerciseDemo';
 import { getExerciseMetadata } from '../../utils/exerciseMetadata';
@@ -41,6 +42,7 @@ export const WorkoutPlayer: React.FC<WorkoutPlayerProps> = ({
   onFinish,
   onCancel,
 }) => {
+  const insets = useSafeAreaInsets();
   const { showToast, triggerHaptic } = useNotification();
   const exercises = routine.exercises || [];
 
@@ -249,7 +251,7 @@ export const WorkoutPlayer: React.FC<WorkoutPlayerProps> = ({
     const estCal = Math.round(durationMin * 7.5);
 
     return (
-      <View style={styles.completedContainer}>
+      <View style={[styles.completedContainer, { paddingTop: Math.max(insets.top + 20, 24) }]}>
         <View style={styles.completedCard}>
           <Award size={64} color={theme.colors.primary} />
           <Text style={styles.completedTitle}>¡ENTRENAMIENTO COMPLETADO!</Text>
@@ -286,7 +288,7 @@ export const WorkoutPlayer: React.FC<WorkoutPlayerProps> = ({
   return (
     <View style={styles.container}>
       {/* Header Bar */}
-      <View style={styles.headerBar}>
+      <View style={[styles.headerBar, { paddingTop: Math.max(insets.top + 8, 16) }]}>
         <View>
           <Text style={styles.routineHeaderType}>{routine.type.toUpperCase()}</Text>
           <Text style={styles.routineHeaderName}>{routine.name}</Text>

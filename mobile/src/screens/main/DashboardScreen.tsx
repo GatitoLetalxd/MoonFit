@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   RefreshControl,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../../context/AuthContext';
 import { useSync } from '../../context/SyncContext';
 import { useNotification } from '../../context/NotificationContext';
@@ -27,7 +28,15 @@ import {
   Award,
   ChevronRight,
   TrendingUp,
+  Sparkles,
+  RotateCw,
+  Shield,
 } from 'lucide-react-native';
+import {
+  getDailyMotivationQuote,
+  getRandomMotivationQuote,
+  MotivationQuote,
+} from '../../utils/motivationQuotes';
 
 const WEEK_DAYS = [
   { index: 1, short: 'LUN', full: 'Lunes', type: 'fuerza', label: 'Glúteos & Piernas', icon: '🍑' },
@@ -65,6 +74,9 @@ export const DashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) =
 
   // Selected routine for modal preview
   const [selectedRoutine, setSelectedRoutine] = useState<Routine | null>(null);
+
+  // Frase de motivación e inspiración diaria
+  const [currentQuote, setCurrentQuote] = useState<MotivationQuote>(getDailyMotivationQuote());
 
   // 1. Cargar caché local de forma instantánea (0ms)
   const loadLocalCache = async () => {
@@ -139,6 +151,18 @@ export const DashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) =
       loadData();
     });
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      // Recargar agua y datos actualizados al volver a la pestaña de Inicio
+      offlineStorage.getCachedWater().then((w) => {
+        if (w && typeof w.total_ml === 'number') {
+          setTodayWaterMl(w.total_ml);
+        }
+      });
+      loadData();
+    }, [])
+  );
 
   const handleAddWater = async (ml: number) => {
     triggerHaptic('success');
@@ -255,6 +279,33 @@ export const DashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) =
           </View>
         </View>
 
+        {/* Admin Quick Banner (Solo si el rol es ADMIN) */}
+        {user?.role === 'ADMIN' && (
+          <TouchableOpacity
+            style={styles.adminBanner}
+            onPress={() => navigation.navigate('AdminUsers')}
+            activeOpacity={0.8}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+              <View style={styles.adminBannerIcon}>
+                <Shield size={18} color="#fff" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={styles.adminBannerTitle}>Supervisión de Alumnos</Text>
+                  <View style={styles.adminBadgeSmall}>
+                    <Text style={styles.adminBadgeSmallText}>ADMIN</Text>
+                  </View>
+                </View>
+                <Text style={styles.adminBannerSubtitle}>
+                  Ver listado, progresos, fotos corporales y de comidas
+                </Text>
+              </View>
+            </View>
+            <ChevronRight size={18} color={theme.colors.primary} />
+          </TouchableOpacity>
+        )}
+
         {/* Weekly Day Selector Strip */}
         <View style={styles.weekStripContainer}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.weekStripContent}>
@@ -355,6 +406,37 @@ export const DashboardScreen: React.FC<{ navigation: any }> = ({ navigation }) =
           </View>
         </View>
 
+        {/* Píldora de Inspiración y Motivación */}
+        <View style={styles.motivationCard}>
+          <View style={styles.motivationHeader}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Sparkles size={16} color={theme.colors.accent} />
+              <Text style={styles.motivationTitle}>INSPIRACIÓN DEL DÍA</Text>
+              <View style={styles.motivationTag}>
+                <Text style={styles.motivationTagText}>{currentQuote.author}</Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              style={styles.refreshQuoteBtn}
+              onPress={() => {
+                triggerHaptic('light');
+                setCurrentQuote(getRandomMotivationQuote(currentQuote.id));
+              }}
+            >
+              <RotateCw size={13} color={theme.colors.primary} />
+              <Text style={styles.refreshQuoteText}>Cambiar</Text>
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles.motivationQuote}>"{currentQuote.quote}"</Text>
+
+          <View style={styles.motivationTipBox}>
+            <Text style={styles.motivationTipText}>
+              💡 <Text style={{ fontWeight: '700', color: '#fff' }}>Recuerda:</Text> {currentQuote.tip}
+            </Text>
+          </View>
+        </View>
+
         {/* Quick Access Menu Cards */}
         <Text style={styles.sectionTitle}>SEGUIMIENTO RÁPIDO</Text>
         <View style={styles.menuGrid}>
@@ -451,6 +533,111 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '800',
     color: theme.colors.textDim,
+  },
+  adminBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(6, 182, 212, 0.08)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(6, 182, 212, 0.35)',
+    borderRadius: theme.radius.lg,
+    padding: 12,
+    marginBottom: 16,
+  },
+  adminBannerIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: theme.colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  adminBannerTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#fff',
+  },
+  adminBadgeSmall: {
+    backgroundColor: 'rgba(6, 182, 212, 0.25)',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  adminBadgeSmallText: {
+    fontSize: 8,
+    fontWeight: '900',
+    color: theme.colors.primary,
+  },
+  adminBannerSubtitle: {
+    fontSize: 10,
+    color: theme.colors.textMuted,
+    marginTop: 1,
+  },
+  motivationCard: {
+    backgroundColor: 'rgba(23, 31, 48, 0.75)',
+    borderRadius: theme.radius.lg,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(6, 182, 212, 0.3)',
+  },
+  motivationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  motivationTitle: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: theme.colors.accent,
+    letterSpacing: 1,
+  },
+  motivationTag: {
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: theme.radius.full,
+  },
+  motivationTagText: {
+    fontSize: 10,
+    color: theme.colors.textMuted,
+    fontWeight: '600',
+  },
+  refreshQuoteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(6, 182, 212, 0.12)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: theme.radius.sm,
+  },
+  refreshQuoteText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: theme.colors.primary,
+  },
+  motivationQuote: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#fff',
+    lineHeight: 19,
+    marginBottom: 10,
+    fontStyle: 'italic',
+  },
+  motivationTipBox: {
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    borderRadius: theme.radius.md,
+    padding: 10,
+    borderLeftWidth: 3,
+    borderLeftColor: theme.colors.primary,
+  },
+  motivationTipText: {
+    fontSize: 12,
+    color: theme.colors.textMuted,
+    lineHeight: 18,
   },
   weekStripContainer: {
     marginBottom: 20,

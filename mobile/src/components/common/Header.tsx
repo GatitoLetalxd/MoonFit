@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { theme } from '../../theme';
 import { ArrowLeft } from 'lucide-react-native';
 import { SyncBadge } from './SyncBadge';
@@ -21,8 +22,10 @@ export const Header: React.FC<HeaderProps> = ({
   rightAction,
   showSyncBadge = false,
 }) => {
+  const insets = useSafeAreaInsets();
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: Math.max(insets.top + 8, 16) }]}>
       <View style={styles.left}>
         {showBack ? (
           <TouchableOpacity onPress={onBack} style={styles.backButton}>

@@ -14,12 +14,13 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Header } from '../../components/common/Header';
+import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
 import { useSync } from '../../context/SyncContext';
 import { offlineStorage } from '../../utils/offlineStorage';
 import { remindersApi, goalsApi, usersApi } from '../../api/services';
-import { scheduleLocalReminder, sendTestNotificationNow } from '../../utils/notifications';
+import { scheduleLocalReminder, cancelNotificationByCategory } from '../../utils/notifications';
 import { Goal, Reminder } from '../../types';
 import { theme } from '../../theme';
 import {
@@ -36,25 +37,43 @@ import {
   Check,
   HelpCircle,
   Plus,
-  Volume2,
   Camera,
+  Calendar,
 } from 'lucide-react-native';
 
-const QUICK_TIME_PRESETS = [
-  { label: '06:00 AM', time: '06:00', icon: '🌅' },
-  { label: '06:30 AM', time: '06:30', icon: '⚡' },
-  { label: '07:00 AM', time: '07:00', icon: '☀️' },
-  { label: '07:30 AM', time: '07:30', icon: '🔥' },
-  { label: '08:00 AM', time: '08:00', icon: '🏋️' },
-  { label: '08:30 AM', time: '08:30', icon: '💪' },
-  { label: '09:00 AM', time: '09:00', icon: '🧘' },
-  { label: '06:00 PM', time: '18:00', icon: '🌆' },
-  { label: '07:00 PM', time: '19:00', icon: '🌙' },
-  { label: '08:00 PM', time: '20:00', icon: '🌟' },
-  { label: '09:00 PM', time: '21:00', icon: '💤' },
+const DAYS_OF_WEEK = [
+  { key: 1, short: 'DOM', full: 'Domingo', icon: '☀️' },
+  { key: 2, short: 'LUN', full: 'Lunes', icon: '🚀' },
+  { key: 3, short: 'MAR', full: 'Martes', icon: '⚡' },
+  { key: 4, short: 'MIÉ', full: 'Miércoles', icon: '💪' },
+  { key: 5, short: 'JUE', full: 'Jueves', icon: '🔥' },
+  { key: 6, short: 'VIE', full: 'Viernes', icon: '🏋️' },
+  { key: 7, short: 'SÁB', full: 'Sábado', icon: '🏃' },
 ];
 
+const PRESETS_BY_TYPE: Record<string, Array<{ label: string; time: string; icon: string }>> = {
+  entrenar: [
+    { label: '07:00 AM', time: '07:00', icon: '🌅' },
+    { label: '08:00 AM', time: '08:00', icon: '☀️' },
+    { label: '06:30 PM', time: '18:30', icon: '🌆' },
+    { label: '08:00 PM', time: '20:00', icon: '🌙' },
+  ],
+  agua: [
+    { label: '09:00 AM', time: '09:00', icon: '💧' },
+    { label: '11:30 AM', time: '11:30', icon: '💧' },
+    { label: '03:00 PM', time: '15:00', icon: '💧' },
+    { label: '06:00 PM', time: '18:00', icon: '💧' },
+  ],
+  pesarse: [
+    { label: '07:30 AM', time: '07:30', icon: '⚖️' },
+    { label: '08:30 AM', time: '08:30', icon: '⚖️' },
+    { label: '09:30 AM', time: '09:30', icon: '⚖️' },
+    { label: '10:00 AM', time: '10:00', icon: '⚖️' },
+  ],
+};
+
 export const ProfileScreen: React.FC = () => {
+  const navigation = useNavigation<any>();
   const { user, logout, updateUserLocal } = useAuth();
   const { showToast, triggerHaptic } = useNotification();
   const { isOnline, enqueueAction } = useSync();
@@ -70,6 +89,7 @@ export const ProfileScreen: React.FC = () => {
   const [tempTime, setTempTime] = useState<string>('08:00');
   const [customHour, setCustomHour] = useState<string>('08');
   const [customMinute, setCustomMinute] = useState<string>('00');
+  const [selectedWeekday, setSelectedWeekday] = useState<number>(1); // 1 = Domingo
 
   // Guide modal state
   const [guideModalVisible, setGuideModalVisible] = useState<boolean>(false);
@@ -129,7 +149,7 @@ export const ProfileScreen: React.FC = () => {
       if (cachedGoal) setActiveGoal(cachedGoal);
       if (cachedReminders && cachedReminders.length > 0) setReminders(cachedReminders);
     } catch (e) {
-      console.warn('Error reading profile cache:', e);
+      console.warn('Error cargando caché en perfil:', e);
     }
   };
 
@@ -175,6 +195,35 @@ export const ProfileScreen: React.FC = () => {
     });
   }, []);
 
+  const formatReminderSchedule = (rem: Reminder) => {
+    if (rem.type === 'pesarse') {
+      let dayNum = 1;
+      if (rem.frequency && rem.frequency.startsWith('semanal:')) {
+        dayNum = parseInt(rem.frequency.replace('semanal:', ''), 10) || 1;
+      }
+      const day = DAYS_OF_WEEK.find((d) => d.key === dayNum) || DAYS_OF_WEEK[0];
+      return `Todos los ${day.full} a las ${rem.time}`;
+    }
+    if (rem.type === 'agua') {
+      return `Recordatorio diario a las ${rem.time}`;
+    }
+    return `Todos los días a las ${rem.time}`;
+  };
+
+  const handleAdjustMinutes = (delta: number) => {
+    triggerHaptic('light');
+    let h = parseInt(customHour, 10) || 0;
+    let m = parseInt(customMinute, 10) || 0;
+    let total = h * 60 + m + delta;
+    if (total < 0) total += 24 * 60;
+    total = total % (24 * 60);
+
+    const newH = String(Math.floor(total / 60)).padStart(2, '0');
+    const newM = String(total % 60).padStart(2, '0');
+    setCustomHour(newH);
+    setCustomMinute(newM);
+  };
+
   const handleToggleReminder = async (rem: Reminder) => {
     triggerHaptic('light');
     const newActive = !rem.active;
@@ -186,9 +235,14 @@ export const ProfileScreen: React.FC = () => {
     await offlineStorage.updateLocalReminder(rem.id, { active: newActive });
 
     if (newActive) {
-      await scheduleLocalReminder(rem.type, rem.time);
-      showToast('Alarma Activada', `Recordatorio programado a las ${rem.time} con sonido y banner en pantalla.`, 'success');
+      let weekdayNum = 1;
+      if (rem.type === 'pesarse' && rem.frequency?.startsWith('semanal:')) {
+        weekdayNum = parseInt(rem.frequency.replace('semanal:', ''), 10) || 1;
+      }
+      await scheduleLocalReminder(rem.type, rem.time, { weekday: weekdayNum });
+      showToast('Alarma Activada', `Recordatorio programado con sonido y banner en pantalla.`, 'success');
     } else {
+      await cancelNotificationByCategory(rem.type);
       showToast('Alarma Desactivada', `Recordatorio pausado.`, 'info');
     }
 
@@ -210,6 +264,14 @@ export const ProfileScreen: React.FC = () => {
     const [h, m] = rem.time.split(':');
     setCustomHour(h || '08');
     setCustomMinute(m || '00');
+
+    if (rem.type === 'pesarse') {
+      let w = 1;
+      if (rem.frequency && rem.frequency.startsWith('semanal:')) {
+        w = parseInt(rem.frequency.replace('semanal:', ''), 10) || 1;
+      }
+      setSelectedWeekday(w);
+    }
     setTimeModalVisible(true);
   };
 
@@ -220,37 +282,54 @@ export const ProfileScreen: React.FC = () => {
     const h = String(Math.min(23, Math.max(0, parseInt(customHour, 10) || 0))).padStart(2, '0');
     const m = String(Math.min(59, Math.max(0, parseInt(customMinute, 10) || 0))).padStart(2, '0');
     const finalTime = `${h}:${m}`;
+    const newFrequency = editingReminder.type === 'pesarse' ? `semanal:${selectedWeekday}` : 'diario';
 
     setReminders((prev) =>
-      prev.map((r) => (r.id === editingReminder.id ? { ...r, time: finalTime, active: true } : r))
+      prev.map((r) =>
+        r.id === editingReminder.id
+          ? { ...r, time: finalTime, frequency: newFrequency, active: true }
+          : r
+      )
     );
-    await offlineStorage.updateLocalReminder(editingReminder.id, { time: finalTime, active: true });
+    await offlineStorage.updateLocalReminder(editingReminder.id, {
+      time: finalTime,
+      frequency: newFrequency,
+      active: true,
+    });
 
-    await scheduleLocalReminder(editingReminder.type, finalTime);
+    await scheduleLocalReminder(editingReminder.type, finalTime, {
+      weekday: selectedWeekday,
+      frequency: newFrequency,
+    });
     triggerHaptic('success');
-    showToast(
-      '¡Alarma Programada!',
-      `Tu recordatorio sonará todos los días a las ${finalTime}.`,
-      'success'
-    );
+
+    const desc =
+      editingReminder.type === 'pesarse'
+        ? `Pesaje programado todos los ${DAYS_OF_WEEK.find((d) => d.key === selectedWeekday)?.full || 'Domingos'} a las ${finalTime}.`
+        : `Recordatorio programado todos los días a las ${finalTime}.`;
+
+    showToast('¡Alarma Guardada!', desc, 'success');
     setTimeModalVisible(false);
+
+    const payload = {
+      time: finalTime,
+      frequency: newFrequency,
+      active: true,
+    };
 
     if (isOnline) {
       try {
-        await remindersApi.updateReminder(editingReminder.id, {
-          time: finalTime,
-          active: true,
-        });
+        await remindersApi.updateReminder(editingReminder.id, payload);
       } catch (e) {
         await enqueueAction('UPDATE_REMINDER', {
           id: editingReminder.id,
-          data: { time: finalTime, active: true },
+          data: payload,
         });
       }
     } else {
       await enqueueAction('UPDATE_REMINDER', {
         id: editingReminder.id,
-        data: { time: finalTime, active: true },
+        data: payload,
       });
     }
   };
@@ -265,30 +344,22 @@ export const ProfileScreen: React.FC = () => {
 
   const handleAddDefaultReminder = async (type: string, timeStr: string) => {
     try {
+      const defaultFreq = type === 'pesarse' ? 'semanal:1' : 'diario';
       const res = await remindersApi.createReminder({
         type,
         time: timeStr,
-        frequency: 'diario',
+        frequency: defaultFreq,
         active: true,
       });
       if (res.data) {
         const newRem = res.data;
         setReminders((prev) => [...prev, newRem]);
-        await scheduleLocalReminder(type, timeStr);
+        await scheduleLocalReminder(type, timeStr, { weekday: 1 });
         showToast('Recordatorio Creado', `Alarma activada a las ${timeStr}.`, 'success');
         triggerHaptic('success');
       }
     } catch (e: any) {
       showToast('Error', e.message, 'error');
-    }
-  };
-
-  const handleTestNotification = async () => {
-    triggerHaptic('success');
-    showToast('Enviando Notificación...', 'Llegará como banner en pantalla con sonido en 2 segundos.', 'info');
-    const sent = await sendTestNotificationNow();
-    if (!sent) {
-      showToast('Permisos Requeridos', 'Por favor habilita las notificaciones en los ajustes de tu teléfono.', 'warning');
     }
   };
 
@@ -310,6 +381,17 @@ export const ProfileScreen: React.FC = () => {
   const heightM = (user?.height_cm || 170) / 100;
   const currentWeight = user?.initial_weight_kg || 70;
   const bmi = (currentWeight / (heightM * heightM)).toFixed(1);
+
+  // Formateo limpio y seguro de la hora y día para el modal de alarmas
+  const safeHour = String(customHour || '08').padStart(2, '0');
+  const safeMinute = String(customMinute || '00').padStart(2, '0');
+  const formattedCustomTime = `${safeHour}:${safeMinute}`;
+  const selectedWeekdayObj = DAYS_OF_WEEK.find((d) => d.key === selectedWeekday);
+  const selectedWeekdayLabel = selectedWeekdayObj ? selectedWeekdayObj.short : 'Dom';
+  const saveTimeButtonText =
+    editingReminder?.type === 'pesarse'
+      ? `Guardar Pesaje (${selectedWeekdayLabel} ${formattedCustomTime})`
+      : `Guardar Alarma (${formattedCustomTime})`;
 
   return (
     <View style={styles.container}>
@@ -361,6 +443,33 @@ export const ProfileScreen: React.FC = () => {
             </View>
           </View>
         </View>
+
+        {/* Panel de Supervisión (Exclusivo Administrador) */}
+        {user?.role === 'ADMIN' && (
+          <TouchableOpacity
+            style={styles.adminCard}
+            onPress={() => navigation.navigate('AdminUsers')}
+            activeOpacity={0.8}
+          >
+            <View style={styles.adminCardLeft}>
+              <View style={styles.adminIconBox}>
+                <Shield size={24} color="#fff" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Text style={styles.adminCardTitle}>Supervisión de Alumnos</Text>
+                  <View style={styles.adminTag}>
+                    <Text style={styles.adminTagText}>ADMIN</Text>
+                  </View>
+                </View>
+                <Text style={styles.adminCardSubtitle}>
+                  Ver usuarios, rutinas completadas, fotos de progreso y comidas
+                </Text>
+              </View>
+            </View>
+            <ChevronRight size={20} color={theme.colors.primary} />
+          </TouchableOpacity>
+        )}
 
         {/* Biometrics Summary */}
         <View style={styles.statsRow}>
@@ -432,6 +541,9 @@ export const ProfileScreen: React.FC = () => {
                     ? '💧 Tomar Agua'
                     : '⚖️ Pesaje Semanal'}
                 </Text>
+                <Text style={styles.reminderScheduleSub}>
+                  {formatReminderSchedule(rem)}
+                </Text>
 
                 <TouchableOpacity
                   style={styles.timeBadgeBtn}
@@ -439,7 +551,9 @@ export const ProfileScreen: React.FC = () => {
                 >
                   <Clock size={14} color={theme.colors.primary} />
                   <Text style={styles.timeBadgeText}>{rem.time}</Text>
-                  <Text style={styles.timeChangeTag}>Cambiar hora ✏️</Text>
+                  <Text style={styles.timeChangeTag}>
+                    {rem.type === 'pesarse' ? 'Cambiar día y hora ✏️' : 'Cambiar hora ✏️'}
+                  </Text>
                 </TouchableOpacity>
               </View>
 
@@ -479,11 +593,6 @@ export const ProfileScreen: React.FC = () => {
               </Text>
             </TouchableOpacity>
           )}
-
-          <TouchableOpacity style={styles.testNotificationBtn} onPress={handleTestNotification}>
-            <Volume2 size={16} color={theme.colors.primary} />
-            <Text style={styles.testNotificationText}>Probar Notificación Flotante con Sonido</Text>
-          </TouchableOpacity>
         </View>
 
         {/* Logout Button */}
@@ -495,7 +604,7 @@ export const ProfileScreen: React.FC = () => {
         <View style={{ height: 40 }} />
       </ScrollView>
 
-      {/* Modal: Selector de Hora Elegante */}
+      {/* Modal: Selector de Hora y Día Elegante */}
       <Modal visible={timeModalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -503,7 +612,11 @@ export const ProfileScreen: React.FC = () => {
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <Clock size={20} color={theme.colors.primary} />
                 <Text style={styles.modalTitle}>
-                  ELEGIR HORA: {editingReminder?.type.toUpperCase()}
+                  {editingReminder?.type === 'pesarse'
+                    ? '⚖️ PESAJE SEMANAL: DÍA Y HORA'
+                    : editingReminder?.type === 'agua'
+                    ? '💧 RECORDATORIO DE AGUA'
+                    : '🔥 HORA DE ENTRENAMIENTO'}
                 </Text>
               </View>
               <TouchableOpacity onPress={() => setTimeModalVisible(false)}>
@@ -512,14 +625,79 @@ export const ProfileScreen: React.FC = () => {
             </View>
 
             <Text style={styles.modalSubtitle}>
-              Selecciona un horario recomendado o ingresa tu hora personalizada:
+              {editingReminder?.type === 'pesarse'
+                ? 'Elige qué día de la semana pesarte y a qué hora sonará tu alarma:'
+                : 'Ajusta la hora exacta para que la app te avise puntualmente:'}
             </Text>
 
+            {/* Selector de Día de la Semana para Pesaje Semanal */}
+            {editingReminder?.type === 'pesarse' && (
+              <>
+                <Text style={styles.pickerSectionLabel}>DÍA DE LA SEMANA:</Text>
+                <View style={styles.daysRow}>
+                  {DAYS_OF_WEEK.map((day) => {
+                    const isSelected = selectedWeekday === day.key;
+                    return (
+                      <TouchableOpacity
+                        key={day.key}
+                        style={[styles.dayChip, isSelected && styles.dayChipSelected]}
+                        onPress={() => {
+                          triggerHaptic('light');
+                          setSelectedWeekday(day.key);
+                        }}
+                      >
+                        <Text style={styles.dayChipIcon}>{day.icon}</Text>
+                        <Text style={[styles.dayChipText, isSelected && styles.dayChipTextSelected]}>
+                          {day.short}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </>
+            )}
+
+            {/* Stepper de Ajuste Rápido */}
+            <Text style={styles.pickerSectionLabel}>AJUSTE RÁPIDO DE HORA:</Text>
+            <View style={styles.timeStepperRow}>
+              <TouchableOpacity
+                style={styles.stepperBtn}
+                onPress={() => handleAdjustMinutes(-60)}
+              >
+                <Text style={styles.stepperBtnText}>-1h</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.stepperBtn}
+                onPress={() => handleAdjustMinutes(-15)}
+              >
+                <Text style={styles.stepperBtnText}>-15m</Text>
+              </TouchableOpacity>
+
+              <View style={styles.bigTimeDisplay}>
+                <Text style={styles.bigTimeDisplayText}>
+                  {formattedCustomTime}
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={styles.stepperBtn}
+                onPress={() => handleAdjustMinutes(15)}
+              >
+                <Text style={styles.stepperBtnText}>+15m</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.stepperBtn}
+                onPress={() => handleAdjustMinutes(60)}
+              >
+                <Text style={styles.stepperBtnText}>+1h</Text>
+              </TouchableOpacity>
+            </View>
+
             {/* Presets Chips Grid */}
-            <Text style={styles.pickerSectionLabel}>HORARIOS RÁPIDOS:</Text>
+            <Text style={styles.pickerSectionLabel}>HORARIOS POPULARES:</Text>
             <View style={styles.presetsGrid}>
-              {QUICK_TIME_PRESETS.map((p) => {
-                const isSelected = `${customHour}:${customMinute}` === p.time;
+              {(PRESETS_BY_TYPE[editingReminder?.type || 'entrenar'] || PRESETS_BY_TYPE.entrenar).map((p) => {
+                const isSelected = formattedCustomTime === p.time;
                 return (
                   <TouchableOpacity
                     key={p.time}
@@ -535,8 +713,8 @@ export const ProfileScreen: React.FC = () => {
               })}
             </View>
 
-            {/* Custom Input */}
-            <Text style={styles.pickerSectionLabel}>O INGRESA LA HORA EXACTA (Formato 24h):</Text>
+            {/* Custom Manual Input */}
+            <Text style={styles.pickerSectionLabel}>O INGRESA MANUALMENTE (24H):</Text>
             <View style={styles.timeInputRow}>
               <View style={styles.timeInputBox}>
                 <Text style={styles.timeInputLabel}>HORA (00-23)</Text>
@@ -567,10 +745,10 @@ export const ProfileScreen: React.FC = () => {
               </View>
             </View>
 
-            <TouchableOpacity style={styles.saveTimeBtn} onPress={handleSaveTime}>
+            <TouchableOpacity style={styles.saveTimeBtn} onPress={handleSaveTime} activeOpacity={0.8}>
               <Check size={18} color="#fff" />
               <Text style={styles.saveTimeBtnText}>
-                Guardar y Activar Alarma ({String(customHour).padStart(2, '0')}:{String(customMinute).padStart(2, '0')})
+                {saveTimeButtonText}
               </Text>
             </TouchableOpacity>
           </View>
@@ -732,6 +910,58 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '800',
   },
+  adminCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(6, 182, 212, 0.08)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(6, 182, 212, 0.35)',
+    borderRadius: theme.radius.xl,
+    padding: 16,
+    marginBottom: 16,
+  },
+  adminCardLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  adminIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: theme.colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: theme.colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  adminCardTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#fff',
+  },
+  adminTag: {
+    backgroundColor: 'rgba(6, 182, 212, 0.25)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  adminTagText: {
+    fontSize: 9,
+    fontWeight: '900',
+    color: theme.colors.primary,
+  },
+  adminCardSubtitle: {
+    fontSize: 11,
+    color: theme.colors.textMuted,
+    marginTop: 2,
+    lineHeight: 15,
+  },
   statsRow: {
     flexDirection: 'row',
     gap: 10,
@@ -847,6 +1077,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '800',
     color: '#fff',
+    marginBottom: 2,
+  },
+  reminderScheduleSub: {
+    fontSize: 12,
+    color: theme.colors.textMuted,
     marginBottom: 6,
   },
   timeBadgeBtn: {
@@ -892,22 +1127,72 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: theme.colors.primary,
   },
-  testNotificationBtn: {
+  daysRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: 18,
+    justifyContent: 'space-between',
+  },
+  dayChip: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    borderRadius: theme.radius.sm,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  dayChipSelected: {
+    backgroundColor: 'rgba(249, 115, 22, 0.2)',
+    borderColor: theme.colors.accent,
+  },
+  dayChipIcon: {
+    fontSize: 12,
+    marginBottom: 2,
+  },
+  dayChipText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: theme.colors.textMuted,
+  },
+  dayChipTextSelected: {
+    color: theme.colors.accent,
+    fontWeight: '900',
+  },
+  timeStepperRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(6, 182, 212, 0.1)',
-    paddingVertical: 12,
-    borderRadius: theme.radius.md,
-    borderWidth: 1,
-    borderColor: 'rgba(6, 182, 212, 0.3)',
-    marginTop: 8,
+    gap: 8,
+    marginBottom: 16,
   },
-  testNotificationText: {
-    color: theme.colors.primary,
-    fontSize: 13,
+  stepperBtn: {
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: theme.radius.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+  },
+  stepperBtnText: {
+    color: '#fff',
+    fontSize: 12,
     fontWeight: '800',
+  },
+  bigTimeDisplay: {
+    backgroundColor: 'rgba(6, 182, 212, 0.15)',
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: theme.radius.md,
+    borderWidth: 1.5,
+    borderColor: theme.colors.primary,
+  },
+  bigTimeDisplayText: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#fff',
+    letterSpacing: 2,
   },
   logoutBtn: {
     flexDirection: 'row',

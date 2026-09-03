@@ -1,5 +1,6 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DashboardScreen } from '../screens/main/DashboardScreen';
 import { RoutinesScreen } from '../screens/main/RoutinesScreen';
 import { ProgressScreen } from '../screens/main/ProgressScreen';
@@ -17,6 +18,8 @@ import {
 const Tab = createBottomTabNavigator();
 
 export const MainTabNavigator: React.FC = () => {
+  const insets = useSafeAreaInsets();
+
   return (
     <Tab.Navigator
       screenOptions={{
@@ -25,8 +28,8 @@ export const MainTabNavigator: React.FC = () => {
           backgroundColor: 'rgba(11, 15, 23, 0.98)',
           borderTopColor: theme.colors.borderSubtle,
           borderTopWidth: 1,
-          height: 64,
-          paddingBottom: 8,
+          height: 60 + Math.max(insets.bottom, 8),
+          paddingBottom: Math.max(insets.bottom, 8),
           paddingTop: 8,
         },
         tabBarActiveTintColor: theme.colors.primary,

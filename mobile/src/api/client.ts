@@ -4,7 +4,7 @@ import { Platform } from 'react-native';
 
 // URL del backend: En dispositivo físico usa la IP LAN de la PC o la variable de entorno.
 export const BASE_API_URL =
-  process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.12:3000/api';
+  process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.7:3000/api';
 
 export const apiClient = axios.create({
   baseURL: BASE_API_URL,
@@ -49,8 +49,14 @@ apiClient.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
+    const requestUrl = originalRequest?.url || '';
+    const isAuthRoute =
+      requestUrl.includes('/auth/login') ||
+      requestUrl.includes('/auth/register') ||
+      requestUrl.includes('/auth/refresh');
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    // No interceptar rutas de login o registro para preservar el mensaje real de credenciales incorrectas
+    if (error.response?.status === 401 && !originalRequest._retry && !isAuthRoute) {
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject });
@@ -68,7 +74,9 @@ apiClient.interceptors.response.use(
       try {
         const refreshToken = await AsyncStorage.getItem('@moonfit_refresh_token');
         if (!refreshToken) {
-          throw new Error('No refresh token disponible');
+          await AsyncStorage.multiRemove(['@moonfit_access_token', '@moonfit_refresh_token', '@moonfit_user']);
+          processQueue(error, null);
+          return Promise.reject(error);
         }
 
         const res = await axios.post(`${BASE_API_URL}/auth/refresh`, {

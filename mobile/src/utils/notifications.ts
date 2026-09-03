@@ -37,12 +37,45 @@ export const initNotifications = async () => {
   return finalStatus === 'granted';
 };
 
-export const scheduleLocalReminder = async (type: string, timeStr: string) => {
+/**
+ * Cancela las notificaciones previamente programadas para una categoría específica
+ * para no acumular alertas duplicadas.
+ */
+export const cancelNotificationByCategory = async (category: string) => {
+  try {
+    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+    for (const notif of scheduled) {
+      if (notif.content.data?.category === category) {
+        await Notifications.cancelScheduledNotificationAsync(notif.identifier);
+      }
+    }
+  } catch (e) {
+    console.warn('Error cancelando notificaciones anteriores:', e);
+  }
+};
+
+/**
+ * Programa una alarma o recordatorio local con sonido y prioridad máxima.
+ * Soporta repetición diaria (entrenamiento, agua) y repetición semanal (pesaje semanal con día específico).
+ */
+export const scheduleLocalReminder = async (
+  type: string,
+  timeStr: string,
+  options?: {
+    weekday?: number; // 1=Domingo, 2=Lunes, 3=Martes, 4=Miércoles, 5=Jueves, 6=Viernes, 7=Sábado
+    frequency?: string;
+  }
+) => {
   try {
     const hasPermission = await initNotifications();
     if (!hasPermission) return false;
 
+    // Cancelar alarmas anteriores de este mismo tipo para evitar duplicidad
+    await cancelNotificationByCategory(type);
+
     const [hours, minutes] = timeStr.split(':').map(Number);
+    const validHours = isNaN(hours) ? 8 : Math.max(0, Math.min(23, hours));
+    const validMinutes = isNaN(minutes) ? 0 : Math.max(0, Math.min(59, minutes));
 
     let title = '🌙 Recordatorio MoonFit';
     let body = '¡Es momento de cuidar tus hábitos y mantenerte en movimiento!';
@@ -50,57 +83,66 @@ export const scheduleLocalReminder = async (type: string, timeStr: string) => {
     if (type === 'entrenar') {
       title = '🔥 ¡Momento de tu Rutina!';
       body = 'Dedica 20 minutos hoy a tu cuerpo desde casa. ¡Tú puedes!';
+
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title,
+          body,
+          sound: true,
+          data: { category: type },
+        },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.DAILY,
+          hour: validHours,
+          minute: validMinutes,
+          channelId: 'moonfit-reminders',
+        },
+      });
     } else if (type === 'agua') {
       title = '💧 Hora de Hidratarte';
-      body = 'Toma un vaso de agua para mantener tu metabolismo activo.';
+      body = 'Toma un vaso de agua para mantener tu metabolismo activo y acelerar tu recuperación.';
+
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title,
+          body,
+          sound: true,
+          data: { category: type },
+        },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.DAILY,
+          hour: validHours,
+          minute: validMinutes,
+          channelId: 'moonfit-reminders',
+        },
+      });
     } else if (type === 'pesarse') {
       title = '⚖️ Registro Semanal de Peso';
-      body = 'Registra tu peso de la semana para actualizar tu gráfica de evolución.';
-    }
+      body = 'Hoy toca tu pesaje semanal. ¡Súbete a la báscula y actualiza tu gráfica de evolución!';
 
-    // Programar notificación diaria repetitiva con sonido por defecto
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title,
-        body,
-        sound: true,
-      },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.DAILY,
-        hour: hours,
-        minute: minutes,
-        channelId: 'moonfit-reminders',
-      },
-    });
+      // Weekday en expo-notifications: 1 = Domingo, 2 = Lunes, ..., 7 = Sábado
+      const targetWeekday = options?.weekday || 1; // Default Domingo
+
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title,
+          body,
+          sound: true,
+          data: { category: type },
+        },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
+          weekday: targetWeekday,
+          hour: validHours,
+          minute: validMinutes,
+          channelId: 'moonfit-reminders',
+        },
+      });
+    }
 
     return true;
   } catch (error) {
     console.error('Error programando notificación local:', error);
-    return false;
-  }
-};
-
-export const sendTestNotificationNow = async () => {
-  try {
-    const hasPermission = await initNotifications();
-    if (!hasPermission) return false;
-
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: '🔥 ¡Prueba de Notificación MoonFit!',
-        body: 'Tu recordatorio diario de entrenamiento está activo con sonido.',
-        sound: true,
-      },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-        seconds: 2,
-        channelId: 'moonfit-reminders',
-      },
-    });
-
-    return true;
-  } catch (error) {
-    console.error('Error lanzando prueba de notificación:', error);
     return false;
   }
 };

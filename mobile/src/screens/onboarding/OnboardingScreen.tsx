@@ -9,6 +9,7 @@ import {
   Image,
   ActivityIndicator,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
@@ -27,6 +28,7 @@ import {
 } from 'lucide-react-native';
 
 export const OnboardingScreen: React.FC = () => {
+  const insets = useSafeAreaInsets();
   const { user, refreshProfile } = useAuth();
   const { showToast, triggerHaptic } = useNotification();
 
@@ -129,7 +131,7 @@ export const OnboardingScreen: React.FC = () => {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: Math.max(insets.top + 8, 28) }]}>
         <Image
           source={require('../../../assets/logo.png')}
           style={styles.logo}
@@ -305,7 +307,7 @@ export const OnboardingScreen: React.FC = () => {
       </ScrollView>
 
       {/* Footer Navigation */}
-      <View style={styles.footerBar}>
+      <View style={[styles.footerBar, { paddingBottom: Math.max(insets.bottom + 12, 16) }]}>
         {step > 1 ? (
           <TouchableOpacity
             style={styles.prevBtn}

@@ -3,13 +3,12 @@ module.exports = {
     {
       name: 'moonfit-backend',
       script: 'dist/server.js',
-      instances: 1,
-      exec_mode: 'fork', // Modo fork: 1 solo proceso para ahorrar memoria en VPS de 1 vCPU
+      instances: 1, // 1 proceso worker optimizado para VPS de 1-2 vCPUs
+      exec_mode: 'fork',
       autorestart: true,
       watch: false,
-      max_memory_restart: '400M', // Reinicia automáticamente si excede 400MB para evitar OOM
-      node_args: '--max-old-space-size=400', // Limita el heap de V8 a 400MB
-      env: {
+      max_memory_restart: '250M', // Reinicia automáticamente si excede 250MB para proteger el VPS
+      env_production: {
         NODE_ENV: 'production',
         PORT: 3000,
       },

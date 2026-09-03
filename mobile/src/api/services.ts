@@ -9,6 +9,9 @@ import {
   WaterLog,
   Goal,
   Reminder,
+  AdminUserListItem,
+  AdminUserDetail,
+  AdminFeedback,
   ApiResponse,
 } from '../types';
 
@@ -68,7 +71,10 @@ export const usersApi = {
     return res.data;
   },
 
-  getAvatarUrl(userId: string) {
+  getAvatarUrl(userId: string, token?: string | null) {
+    if (token) {
+      return `${BASE_API_URL}/users/${userId}/avatar?token=${encodeURIComponent(token)}`;
+    }
     return `${BASE_API_URL}/users/${userId}/avatar`;
   },
 };
@@ -120,8 +126,8 @@ export const workoutsApi = {
     return res.data;
   },
 
-  async getHistory() {
-    const res = await apiClient.get<ApiResponse<WorkoutLog[]>>('/workouts');
+  async getHistory(limit: number = 50) {
+    const res = await apiClient.get<ApiResponse<WorkoutLog[]>>(`/workouts?limit=${limit}`);
     return res.data;
   },
 };
@@ -183,6 +189,13 @@ export const nutritionApi = {
     const res = await apiClient.post<ApiResponse<WaterLog>>('/nutrition/water', { amount_ml });
     return res.data;
   },
+
+  getMealPhotoViewUrl(photoId: string, token?: string | null) {
+    if (token) {
+      return `${BASE_API_URL}/nutrition/meals/photos/${photoId}/view?token=${encodeURIComponent(token)}`;
+    }
+    return `${BASE_API_URL}/nutrition/meals/photos/${photoId}/view`;
+  },
 };
 
 export const goalsApi = {
@@ -215,6 +228,27 @@ export const remindersApi = {
 
   async deleteReminder(id: number) {
     const res = await apiClient.delete<ApiResponse<null>>(`/reminders/${id}`);
+    return res.data;
+  },
+};
+
+export const adminApi = {
+  async listUsers(params?: { search?: string; page?: number; limit?: number }) {
+    const res = await apiClient.get<ApiResponse<{ users: AdminUserListItem[]; pagination: any }>>('/admin/users', {
+      params,
+    });
+    return res.data;
+  },
+
+  async getUserDetail(userId: string) {
+    const res = await apiClient.get<ApiResponse<AdminUserDetail>>(`/admin/users/${userId}`);
+    return res.data;
+  },
+
+  async sendFeedback(userId: string, message: string) {
+    const res = await apiClient.post<ApiResponse<AdminFeedback>>(`/admin/users/${userId}/feedback`, {
+      message,
+    });
     return res.data;
   },
 };

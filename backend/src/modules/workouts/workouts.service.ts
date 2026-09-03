@@ -18,6 +18,35 @@ export class WorkoutsService {
       throw new Error('Rutina no encontrada');
     }
 
+    const logCompletedAt = data.completedAt ? new Date(data.completedAt) : new Date();
+
+    // Idempotencia: Si ya existe un registro idéntico en los últimos 60 segundos, retornar el existente
+    const sixtySecondsAgo = new Date(logCompletedAt.getTime() - 60000);
+    const existingLog = await prisma.workoutLog.findFirst({
+      where: {
+        user_id: data.userId,
+        routine_id: data.routineId,
+        status: data.status || 'COMPLETADA',
+        completed_at: {
+          gte: sixtySecondsAgo,
+          lte: new Date(logCompletedAt.getTime() + 60000),
+        },
+      },
+      include: {
+        routine: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+          },
+        },
+      },
+    });
+
+    if (existingLog) {
+      return existingLog;
+    }
+
     const log = await prisma.workoutLog.create({
       data: {
         user_id: data.userId,
@@ -26,7 +55,7 @@ export class WorkoutsService {
         duration_seconds: data.duration_seconds !== undefined ? data.duration_seconds : null,
         exercises_completed: data.exercises_completed !== undefined ? data.exercises_completed : null,
         total_exercises: data.total_exercises !== undefined ? data.total_exercises : null,
-        completed_at: data.completedAt ? new Date(data.completedAt) : new Date(),
+        completed_at: logCompletedAt,
       },
       include: {
         routine: {

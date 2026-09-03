@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,11 @@ import {
   RefreshControl,
   ActivityIndicator,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
+import * as MediaLibrary from 'expo-media-library';
+import * as FileSystem from 'expo-file-system/legacy';
+import { useFocusEffect } from '@react-navigation/native';
 import { Header } from '../../components/common/Header';
 import { useNotification } from '../../context/NotificationContext';
 import { useSync } from '../../context/SyncContext';
@@ -29,6 +33,8 @@ import {
   Heart,
   Zap,
   Coffee,
+  Maximize2,
+  Download,
 } from 'lucide-react-native';
 
 const MEAL_TYPES = [
@@ -39,19 +45,24 @@ const MEAL_TYPES = [
 ];
 
 const FEELINGS = [
-  { id: 'ligera', label: 'Ligera y con energía', emoji: '🌱' },
-  { id: 'satisfecha', label: 'Satisfecha y en balance', emoji: '🥗' },
-  { id: 'fuerte', label: 'Fuerte y nutrida', emoji: '⚡' },
-  { id: 'pesada', label: 'Pesada o lenta', emoji: '🥱' },
+  { id: 'ligera', label: 'Ligera y con energía', emoji: '✨' },
+  { id: 'satisfecha', label: 'Satisfecha y bien', emoji: '😊' },
+  { id: 'pesada', label: 'Pesada o con pereza', emoji: '😴' },
+  { id: 'antojo', label: 'Fue un gusto consciente', emoji: '🍫' },
 ];
 
 export const NutritionScreen: React.FC = () => {
   const { showToast, triggerHaptic } = useNotification();
   const { isOnline, enqueueAction } = useSync();
 
+  const [authToken, setAuthToken] = useState<string | null>(null);
   const [meals, setMeals] = useState<Meal[]>([]);
   const [todayWaterMl, setTodayWaterMl] = useState<number>(0);
   const [refreshing, setRefreshing] = useState<boolean>(false);
+
+  // Visor de foto de comida en grande
+  const [selectedMealPhoto, setSelectedMealPhoto] = useState<{ url: string; meal: Meal } | null>(null);
+  const [savingMealPhoto, setSavingMealPhoto] = useState<boolean>(false);
 
   // Modal registrar comida
   const [mealModalVisible, setMealModalVisible] = useState<boolean>(false);
@@ -60,6 +71,10 @@ export const NutritionScreen: React.FC = () => {
   const [notes, setNotes] = useState<string>('');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [submittingMeal, setSubmittingMeal] = useState<boolean>(false);
+
+  useEffect(() => {
+    AsyncStorage.getItem('@moonfit_access_token').then(setAuthToken);
+  }, []);
 
   const loadLocalCache = async () => {
     try {
@@ -99,11 +114,23 @@ export const NutritionScreen: React.FC = () => {
     });
   }, []);
 
+  useFocusEffect(
+    useCallback(() => {
+      // Sincronizar agua inmediatamente al volver a la pestaña de Nutrición
+      offlineStorage.getCachedWater().then((w) => {
+        if (w && typeof w.total_ml === 'number') {
+          setTodayWaterMl(w.total_ml);
+        }
+      });
+      loadData();
+    }, [])
+  );
+
   const handleAddWater = async (ml: number) => {
     triggerHaptic('success');
-    // Actualización inmediata en UI y almacenamiento local
-    setTodayWaterMl((prev) => prev + ml);
-    await offlineStorage.addLocalWater(ml);
+    // Actualización sincronizada en UI y almacenamiento local
+    const newTotal = await offlineStorage.addLocalWater(ml);
+    setTodayWaterMl(newTotal);
 
     if (isOnline) {
       try {
@@ -116,6 +143,39 @@ export const NutritionScreen: React.FC = () => {
     }
 
     showToast('¡Hidratación Sumada!', `+${ml} ml registrados con éxito.`, 'success');
+  };
+
+  const handleSaveMealPhotoToGallery = async (photoUrl: string) => {
+    try {
+      triggerHaptic('light');
+      setSavingMealPhoto(true);
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status !== 'granted') {
+        showToast('Permiso Denegado', 'Se requiere permiso para guardar fotos en tu galería.', 'warning');
+        setSavingMealPhoto(false);
+        return;
+      }
+
+      showToast('Descargando...', 'Guardando foto de comida en tu galería.', 'info');
+      const filename = `moonfit_comida_${Date.now()}.jpg`;
+      const fileUri = `${FileSystem.documentDirectory}${filename}`;
+
+      const res = await FileSystem.downloadAsync(photoUrl, fileUri, {
+        headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined,
+      });
+
+      if (res.status === 200) {
+        await MediaLibrary.saveToLibraryAsync(res.uri);
+        triggerHaptic('success');
+        showToast('¡Guardada en Galería!', 'La foto se guardó exitosamente en tu teléfono.', 'success');
+      } else {
+        showToast('Error', 'No se pudo descargar la imagen.', 'error');
+      }
+    } catch (e: any) {
+      showToast('Error al guardar', e.message || 'No se pudo guardar la foto', 'error');
+    } finally {
+      setSavingMealPhoto(false);
+    }
   };
 
   const handlePickPhoto = async () => {
@@ -236,31 +296,74 @@ export const NutritionScreen: React.FC = () => {
               <Text style={styles.emptyText}>No has registrado comidas aún.</Text>
             </View>
           ) : (
-            meals.map((meal) => (
-              <View key={meal.id} style={styles.mealCard}>
-                <View style={styles.mealCardHeader}>
-                  <View style={styles.mealTypeBadge}>
-                    <Text style={styles.mealTypeBadgeText}>
-                      {(meal.meal_type || 'Comida').toUpperCase()}
+            meals.map((meal) => {
+              const hasPhoto = meal.photos && meal.photos.length > 0;
+              const photoUrl = hasPhoto
+                ? nutritionApi.getMealPhotoViewUrl(meal.photos![0].id, authToken)
+                : null;
+              return (
+                <View key={meal.id} style={styles.mealCard}>
+                  <View style={styles.mealCardHeader}>
+                    <View style={styles.mealTypeBadge}>
+                      <Text style={styles.mealTypeBadgeText}>
+                        {(meal.meal_type || 'Comida').toUpperCase()}
+                      </Text>
+                    </View>
+                    <Text style={styles.mealDate}>
+                      {new Date(meal.logged_at).toLocaleDateString('es-ES', {
+                        weekday: 'short',
+                        day: 'numeric',
+                        month: 'short',
+                      })} • {new Date(meal.logged_at).toLocaleTimeString('es-ES', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
                     </Text>
                   </View>
-                  <Text style={styles.mealDate}>
-                    {new Date(meal.logged_at).toLocaleDateString('es-ES', {
-                      weekday: 'short',
-                      day: 'numeric',
-                      month: 'short',
-                    })} • {new Date(meal.logged_at).toLocaleTimeString('es-ES', {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </Text>
-                </View>
 
-                <Text style={styles.mealDescription}>
-                  {meal.description || 'Comida registrada'}
-                </Text>
-              </View>
-            ))
+                  <View style={styles.mealBodyRow}>
+                    {hasPhoto && photoUrl ? (
+                      <TouchableOpacity
+                        style={styles.mealThumbContainer}
+                        onPress={() => {
+                          triggerHaptic('light');
+                          setSelectedMealPhoto({ url: photoUrl, meal });
+                        }}
+                        activeOpacity={0.8}
+                      >
+                        <Image
+                          source={{
+                            uri: photoUrl,
+                            headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined,
+                          }}
+                          style={styles.mealThumbImage}
+                        />
+                        <View style={styles.mealZoomBadge}>
+                          <Maximize2 size={11} color="#fff" />
+                        </View>
+                      </TouchableOpacity>
+                    ) : null}
+
+                    <View style={{ flex: 1, justifyContent: 'center' }}>
+                      <Text style={styles.mealDescription}>
+                        {meal.description || 'Comida registrada'}
+                      </Text>
+                      {hasPhoto && (
+                        <TouchableOpacity
+                          style={styles.viewPhotoLink}
+                          onPress={() => {
+                            triggerHaptic('light');
+                            setSelectedMealPhoto({ url: photoUrl!, meal });
+                          }}
+                        >
+                          <Text style={styles.viewPhotoLinkText}>Ver foto completa 🔍</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+                </View>
+              );
+            })
           )}
         </View>
 
@@ -352,6 +455,78 @@ export const NutritionScreen: React.FC = () => {
                 )}
               </TouchableOpacity>
             </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal: Ver Foto de Comida en Grande y Guardar en Galería */}
+      <Modal visible={!!selectedMealPhoto} transparent animationType="fade">
+        <View style={styles.photoModalOverlay}>
+          <View style={styles.photoModalContent}>
+            <View style={styles.photoModalHeader}>
+              <View>
+                <Text style={styles.photoModalTitle}>
+                  {(selectedMealPhoto?.meal?.meal_type || 'COMIDA').toUpperCase()}
+                </Text>
+                {selectedMealPhoto?.meal && (
+                  <Text style={styles.photoModalDate}>
+                    {new Date(selectedMealPhoto.meal.logged_at).toLocaleDateString('es-ES', {
+                      weekday: 'long',
+                      day: 'numeric',
+                      month: 'long',
+                    })}{' '}
+                    •{' '}
+                    {new Date(selectedMealPhoto.meal.logged_at).toLocaleTimeString('es-ES', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </Text>
+                )}
+              </View>
+              <TouchableOpacity
+                onPress={() => setSelectedMealPhoto(null)}
+                style={styles.closeModalBtn}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <X size={20} color="#fff" />
+              </TouchableOpacity>
+            </View>
+
+            {selectedMealPhoto && (
+              <View style={styles.largeImageContainer}>
+                <Image
+                  source={{
+                    uri: selectedMealPhoto.url,
+                    headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined,
+                  }}
+                  style={styles.largeImage}
+                  resizeMode="contain"
+                />
+              </View>
+            )}
+
+            {selectedMealPhoto?.meal?.description ? (
+              <Text style={styles.mealModalNotes}>
+                "{selectedMealPhoto.meal.description}"
+              </Text>
+            ) : null}
+
+            {selectedMealPhoto && (
+              <TouchableOpacity
+                style={styles.saveGalleryBtn}
+                onPress={() => handleSaveMealPhotoToGallery(selectedMealPhoto.url)}
+                disabled={savingMealPhoto}
+              >
+                {savingMealPhoto ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <>
+                    <Download size={18} color="#fff" />
+                    <Text style={styles.saveGalleryBtnText}>Guardar Foto en Galería</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </Modal>
@@ -628,6 +803,122 @@ const styles = StyleSheet.create({
   submitMealBtnText: {
     color: '#fff',
     fontSize: 15,
+    fontWeight: '800',
+  },
+  mealBodyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 6,
+  },
+  mealThumbContainer: {
+    width: 68,
+    height: 68,
+    borderRadius: theme.radius.md,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    position: 'relative',
+  },
+  mealThumbImage: {
+    width: '100%',
+    height: '100%',
+  },
+  mealZoomBadge: {
+    position: 'absolute',
+    bottom: 4,
+    right: 4,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    borderRadius: 8,
+    padding: 3,
+  },
+  viewPhotoLink: {
+    marginTop: 6,
+    alignSelf: 'flex-start',
+  },
+  viewPhotoLinkText: {
+    color: theme.colors.primary,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  photoModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.92)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+  },
+  photoModalContent: {
+    width: '100%',
+    maxHeight: '92%',
+    backgroundColor: '#111827',
+    borderRadius: theme.radius.xl,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  photoModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  photoModalTitle: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: theme.colors.accent,
+    letterSpacing: 1,
+  },
+  photoModalDate: {
+    fontSize: 12,
+    color: theme.colors.textMuted,
+    marginTop: 2,
+    textTransform: 'capitalize',
+  },
+  closeModalBtn: {
+    padding: 6,
+    borderRadius: theme.radius.full,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  largeImageContainer: {
+    width: '100%',
+    height: 340,
+    backgroundColor: '#000',
+    borderRadius: theme.radius.lg,
+    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    marginBottom: 14,
+  },
+  largeImage: {
+    width: '100%',
+    height: '100%',
+  },
+  mealModalNotes: {
+    fontSize: 13,
+    color: '#fff',
+    fontStyle: 'italic',
+    lineHeight: 18,
+    marginBottom: 16,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    padding: 10,
+    borderRadius: theme.radius.md,
+  },
+  saveGalleryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: theme.colors.primaryDark,
+    borderRadius: theme.radius.md,
+    paddingVertical: 14,
+  },
+  saveGalleryBtnText: {
+    color: '#fff',
+    fontSize: 14,
     fontWeight: '800',
   },
 });

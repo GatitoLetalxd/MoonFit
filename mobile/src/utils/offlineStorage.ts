@@ -130,10 +130,13 @@ export const DEFAULT_OFFLINE_ROUTINES: Routine[] = [
   },
 ];
 
-// Helper para fecha en formato YYYY-MM-DD
+// Helper para fecha local en formato YYYY-MM-DD
 const getTodayKey = (date?: Date): string => {
   const d = date || new Date();
-  return d.toISOString().split('T')[0];
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 };
 
 export const offlineStorage = {
@@ -379,17 +382,44 @@ export const offlineStorage = {
     }
   },
 
+  async incrementQueueItemRetry(id: string): Promise<number> {
+    try {
+      const queue = await this.getSyncQueue();
+      let retryCount = 1;
+      const updated = queue.map((item) => {
+        if (item.id === id) {
+          retryCount = (item.retry_count || 0) + 1;
+          return { ...item, retry_count: retryCount };
+        }
+        return item;
+      });
+      await this.saveSyncQueue(updated);
+      return retryCount;
+    } catch (e) {
+      console.warn('Error incrementing retry count in sync queue:', e);
+      return 1;
+    }
+  },
+
   async clearAllCache(): Promise<void> {
     try {
-      await AsyncStorage.multiRemove([
-        STORAGE_KEYS.ROUTINES,
-        STORAGE_KEYS.WORKOUTS,
-        STORAGE_KEYS.WEIGHTS,
-        STORAGE_KEYS.GOAL,
-        STORAGE_KEYS.REMINDERS,
-        STORAGE_KEYS.MEALS,
-        STORAGE_KEYS.SYNC_QUEUE,
-      ]);
+      const allKeys = await AsyncStorage.getAllKeys();
+      const moonfitCacheKeys = allKeys.filter(
+        (key) =>
+          key.startsWith('@moonfit_cached_') ||
+          key.startsWith('@moonfit_sync_') ||
+          key === STORAGE_KEYS.ROUTINES ||
+          key === STORAGE_KEYS.WORKOUTS ||
+          key === STORAGE_KEYS.WEIGHTS ||
+          key === STORAGE_KEYS.GOAL ||
+          key === STORAGE_KEYS.REMINDERS ||
+          key === STORAGE_KEYS.MEALS ||
+          key === STORAGE_KEYS.SYNC_QUEUE
+      );
+
+      if (moonfitCacheKeys.length > 0) {
+        await AsyncStorage.multiRemove(moonfitCacheKeys);
+      }
     } catch (e) {
       console.warn('Error clearing offline cache:', e);
     }

@@ -137,3 +137,53 @@ export interface ApiResponse<T> {
   errors?: any[];
 }
 
+export interface AdminFeedback {
+  id: number;
+  user_id: string;
+  admin_id: string;
+  message: string;
+  created_at: string;
+  admin?: {
+    id: string;
+    name: string;
+    email: string;
+  };
+}
+
+export interface AdminUserListItem {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  active: boolean;
+  avatar_url?: string | null;
+  age?: number | null;
+  height_cm?: number | null;
+  initial_weight_kg?: number | null;
+  onboarding_completed: boolean;
+  created_at: string;
+  _count: {
+    weekly_weight_logs: number;
+    progress_photos: number;
+    workout_logs: number;
+    meals: number;
+  };
+}
+
+export interface AdminUserDetail extends User {
+  goals: Goal[];
+  weekly_weight_logs: WeeklyWeightLog[];
+  body_measurements: BodyMeasurement[];
+  progress_photos: { id: string; taken_at: string; created_at: string }[];
+  assigned_routines: {
+    id: number;
+    routine_id: number;
+    assigned_at: string;
+    routine: Routine;
+  }[];
+  workout_logs: WorkoutLog[];
+  meals: Meal[];
+  reminders: Reminder[];
+  received_feedback: AdminFeedback[];
+}
+

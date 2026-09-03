@@ -139,6 +139,7 @@ model WorkoutLog {
 
   @@index([user_id])
   @@index([routine_id])
+  @@index([user_id, completed_at])
   @@map("workout_logs")
 }
 
@@ -195,6 +196,7 @@ model Meal {
   photos      MealPhoto[]
 
   @@index([user_id])
+  @@index([user_id, logged_at])
   @@map("meals")
 }
 
@@ -217,6 +219,7 @@ model WaterLog {
   logged_at  DateTime @default(now())
 
   @@index([user_id])
+  @@index([user_id, logged_at])
   @@map("water_logs")
 }
 

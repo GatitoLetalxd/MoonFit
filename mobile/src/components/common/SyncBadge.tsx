@@ -1,61 +1,132 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useSync } from '../../context/SyncContext';
 import { theme } from '../../theme';
-import { Cloud, CloudOff, RefreshCw, Zap } from 'lucide-react-native';
+import { Cloud, Zap, RefreshCw } from 'lucide-react-native';
 
 export const SyncBadge: React.FC = () => {
   const { isOnline, isSyncing, pendingCount, processSyncQueue } = useSync();
+  const [showText, setShowText] = useState<boolean>(true);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const statusKey = isSyncing
+    ? 'syncing'
+    : !isOnline
+    ? 'offline'
+    : pendingCount > 0
+    ? `pending_${pendingCount}`
+    : 'synced';
+
+  useEffect(() => {
+    // Al cambiar de estado, mostrar el texto descriptivo
+    setShowText(true);
+
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+    }
+
+    // Ocultar el texto después de 1 segundo para mantener únicamente el icono elegante
+    timerRef.current = setTimeout(() => {
+      setShowText(false);
+    }, 1000);
+
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+      }
+    };
+  }, [statusKey]);
 
   const handlePress = () => {
-    if (isOnline && !isSyncing) {
+    // Si tocan el badge, mostrar el texto durante 2s y sincronizar si hay pendientes
+    setShowText(true);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      setShowText(false);
+    }, 2000);
+
+    if (isOnline && !isSyncing && pendingCount > 0) {
       processSyncQueue();
     }
   };
 
   if (isSyncing) {
     return (
-      <View style={[styles.badge, styles.badgeSyncing]}>
-        <ActivityIndicator size={12} color={theme.colors.primary} style={{ marginRight: 5 }} />
-        <Text style={[styles.text, styles.textSyncing]}>
-          {pendingCount > 0 ? `Sincronizando (${pendingCount})...` : 'Sincronizando...'}
-        </Text>
-      </View>
+      <TouchableOpacity
+        style={[styles.badge, styles.badgeSyncing, !showText && styles.badgeIconOnly]}
+        onPress={handlePress}
+        activeOpacity={0.7}
+      >
+        <ActivityIndicator
+          size={12}
+          color={theme.colors.primary}
+          style={showText ? { marginRight: 5 } : undefined}
+        />
+        {showText && (
+          <Text style={[styles.text, styles.textSyncing]}>
+            {pendingCount > 0 ? `Sincronizando (${pendingCount})...` : 'Sincronizando...'}
+          </Text>
+        )}
+      </TouchableOpacity>
     );
   }
 
   if (!isOnline) {
     return (
-      <View style={[styles.badge, styles.badgeOffline]}>
-        <Zap size={13} color="#f59e0b" style={{ marginRight: 4 }} />
-        <Text style={[styles.text, styles.textOffline]}>
-          {pendingCount > 0 ? `Offline (${pendingCount})` : 'Offline'}
-        </Text>
-      </View>
+      <TouchableOpacity
+        style={[styles.badge, styles.badgeOffline, !showText && styles.badgeIconOnly]}
+        onPress={handlePress}
+        activeOpacity={0.7}
+      >
+        <Zap
+          size={13}
+          color="#f59e0b"
+          style={showText ? { marginRight: 4 } : undefined}
+        />
+        {showText && (
+          <Text style={[styles.text, styles.textOffline]}>
+            {pendingCount > 0 ? `Offline (${pendingCount})` : 'Offline'}
+          </Text>
+        )}
+      </TouchableOpacity>
     );
   }
 
   if (pendingCount > 0) {
     return (
       <TouchableOpacity
-        style={[styles.badge, styles.badgePending]}
+        style={[styles.badge, styles.badgePending, !showText && styles.badgeIconOnly]}
         onPress={handlePress}
         activeOpacity={0.7}
       >
-        <RefreshCw size={12} color={theme.colors.primary} style={{ marginRight: 4 }} />
-        <Text style={[styles.text, styles.textPending]}>
-          {`Sincronizar (${pendingCount})`}
-        </Text>
+        <RefreshCw
+          size={12}
+          color={theme.colors.primary}
+          style={showText ? { marginRight: 4 } : undefined}
+        />
+        {showText && (
+          <Text style={[styles.text, styles.textPending]}>
+            {`Sincronizar (${pendingCount})`}
+          </Text>
+        )}
       </TouchableOpacity>
     );
   }
 
   // Online & fully synced
   return (
-    <View style={[styles.badge, styles.badgeSynced]}>
-      <Cloud size={13} color="#10b981" style={{ marginRight: 4 }} />
-      <Text style={[styles.text, styles.textSynced]}>Sincronizado</Text>
-    </View>
+    <TouchableOpacity
+      style={[styles.badge, styles.badgeSynced, !showText && styles.badgeIconOnly]}
+      onPress={handlePress}
+      activeOpacity={0.7}
+    >
+      <Cloud
+        size={13}
+        color="#10b981"
+        style={showText ? { marginRight: 4 } : undefined}
+      />
+      {showText && <Text style={[styles.text, styles.textSynced]}>Sincronizado</Text>}
+    </TouchableOpacity>
   );
 };
 
@@ -64,9 +135,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingVertical: 5,
     borderRadius: 12,
     borderWidth: 1,
+  },
+  badgeIconOnly: {
+    paddingHorizontal: 6,
+    paddingVertical: 5,
+    borderRadius: 10,
+    justifyContent: 'center',
   },
   badgeSyncing: {
     backgroundColor: 'rgba(56, 189, 248, 0.12)',

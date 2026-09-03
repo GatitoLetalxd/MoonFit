@@ -86,10 +86,10 @@ async function runTests() {
     console.log('   Reusing old token status:', reuseRes.status, '(Expected: 401)');
     if (reuseRes.status !== 401) throw new Error('Token reuse detection failed');
 
-    // 5. Complete Onboarding
-    console.log('\n5. Testing Complete Onboarding (POST /api/users/onboarding)');
+    // 5. Complete Onboarding (Testing PUT /api/users/onboarding)
+    console.log('\n5. Testing Complete Onboarding (PUT /api/users/onboarding)');
     const onbRes = await fetch(`${BASE_URL}/api/users/onboarding`, {
-      method: 'POST',
+      method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${userToken}`,
@@ -103,6 +103,16 @@ async function runTests() {
     });
     const onbJson = (await onbRes.json()) as any;
     console.log('   Status:', onbRes.status, '| Onboarding completed:', onbJson.data?.onboarding_completed);
+    if (onbRes.status !== 200) throw new Error('PUT /api/users/onboarding failed');
+
+    // 5b. Test Active Goal (GET /api/goals/active)
+    console.log('\n5b. Testing Active Goal (GET /api/goals/active)');
+    const activeGoalRes = await fetch(`${BASE_URL}/api/goals/active`, {
+      headers: { Authorization: `Bearer ${userToken}` },
+    });
+    const activeGoalJson = (await activeGoalRes.json()) as any;
+    console.log('   Status:', activeGoalRes.status, '| Target weight:', activeGoalJson.data?.target_weight_kg, 'kg');
+    if (activeGoalRes.status !== 200) throw new Error('GET /api/goals/active failed');
 
     // 6. Security Check: Normal user trying to access admin endpoint
     console.log('\n6. Testing RBAC Security: Normal user accessing /api/admin/users');
@@ -150,8 +160,8 @@ async function runTests() {
     console.log('   Status:', createRoutineRes.status, '| Created routine:', routineJson.data?.name);
     customRoutineId = routineJson.data.id;
 
-    // 10. Log Workout
-    console.log('\n10. Log Workout (POST /api/workouts)');
+    // 10. Log Workout & Test Idempotency
+    console.log('\n10. Log Workout (POST /api/workouts) & Idempotency Test');
     const workoutRes = await fetch(`${BASE_URL}/api/workouts`, {
       method: 'POST',
       headers: {
@@ -163,7 +173,33 @@ async function runTests() {
       }),
     });
     const workoutJson = (await workoutRes.json()) as any;
-    console.log('   Status:', workoutRes.status, '| Logged routine:', workoutJson.data?.routine?.name);
+    console.log('   First log status:', workoutRes.status, '| Logged routine:', workoutJson.data?.routine?.name);
+
+    // Immediate duplicate log (Idempotency test)
+    const duplicateWorkoutRes = await fetch(`${BASE_URL}/api/workouts`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${userToken}`,
+      },
+      body: JSON.stringify({
+        routine_id: customRoutineId,
+      }),
+    });
+    const duplicateWorkoutJson = (await duplicateWorkoutRes.json()) as any;
+    console.log('   Duplicate log status:', duplicateWorkoutRes.status, '| Idempotent ID match:', workoutJson.data?.id === duplicateWorkoutJson.data?.id);
+    if (workoutJson.data?.id !== duplicateWorkoutJson.data?.id) throw new Error('Workout idempotency failed');
+
+    // 10b. Test GET /api/workouts (Workout History direct endpoint)
+    console.log('\n10b. Testing Workout History (GET /api/workouts)');
+    const workoutHistoryRes = await fetch(`${BASE_URL}/api/workouts`, {
+      headers: { Authorization: `Bearer ${userToken}` },
+    });
+    const workoutHistoryJson = (await workoutHistoryRes.json()) as any;
+    console.log('   Status:', workoutHistoryRes.status, '| History count:', workoutHistoryJson.data?.length);
+    if (workoutHistoryRes.status !== 200 || !Array.isArray(workoutHistoryJson.data)) {
+      throw new Error('GET /api/workouts failed');
+    }
 
     // 11. Weekly Weight Upsert
     console.log('\n11. Weekly Weight Logging & Upsert (POST /api/progress/weight)');

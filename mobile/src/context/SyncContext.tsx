@@ -152,12 +152,18 @@ export const SyncProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       } catch (error: any) {
         console.warn(`Sync item ${item.id} (${item.type}) failed:`, error?.message);
 
-        // Si es un error 4xx irrelevante/duplicado, remover para evitar bloqueo
+        // Incrementar contador de reintentos
+        const newRetries = await offlineStorage.incrementQueueItemRetry(item.id);
+
         const status = error?.response?.status;
-        if (status && status >= 400 && status < 500 && status !== 408 && status !== 429) {
+        const isClientError = status && status >= 400 && status < 500 && status !== 408 && status !== 429;
+
+        // Si es un error 4xx irrecuperable o ya superó 5 reintentos fallidos, descartar de la cola
+        if (isClientError || newRetries >= 5) {
+          console.log(`Descartando item ${item.id} de la cola tras ${newRetries} intentos.`);
           await offlineStorage.removeFromQueue(item.id);
         } else {
-          // Si es un fallo de red o 5xx, detener la iteración y esperar siguiente reconexión
+          // Si es un fallo de red temporal o 5xx, detener la iteración y esperar siguiente reconexión
           break;
         }
       }

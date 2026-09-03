@@ -11,18 +11,21 @@ import {
   Platform,
   ScrollView,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
 import { theme } from '../../theme';
-import { User as UserIcon, Mail, Lock, UserPlus } from 'lucide-react-native';
+import { User as UserIcon, Mail, Lock, UserPlus, Eye, EyeOff } from 'lucide-react-native';
 
 export const RegisterScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
+  const insets = useSafeAreaInsets();
   const { register } = useAuth();
   const { showToast } = useNotification();
 
   const [name, setName] = useState<string>('');
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
+  const [showPassword, setShowPassword] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
 
   const handleRegister = async () => {
@@ -49,9 +52,21 @@ export const RegisterScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
     >
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.scrollContent,
+          {
+            paddingTop: Math.max(insets.top + 16, 24),
+            paddingBottom: Math.max(insets.bottom + 24, 40),
+          },
+        ]}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+      >
         {/* Header */}
         <View style={styles.brandHeader}>
           <Image
@@ -107,13 +122,24 @@ export const RegisterScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
             <View style={styles.inputWrapper}>
               <Lock size={18} color={theme.colors.textDim} style={styles.inputIcon} />
               <TextInput
-                style={styles.input}
+                style={[styles.input, { paddingRight: 40 }]}
                 placeholder="Mínimo 6 caracteres"
                 placeholderTextColor={theme.colors.textDim}
-                secureTextEntry
+                secureTextEntry={!showPassword}
                 value={password}
                 onChangeText={setPassword}
               />
+              <TouchableOpacity
+                style={styles.eyeBtn}
+                onPress={() => setShowPassword((prev) => !prev)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                {showPassword ? (
+                  <EyeOff size={18} color={theme.colors.primary} />
+                ) : (
+                  <Eye size={18} color={theme.colors.textDim} />
+                )}
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -128,7 +154,7 @@ export const RegisterScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
             ) : (
               <>
                 <UserPlus size={18} color="#fff" />
-                <Text style={styles.submitBtnText}>Registrarme</Text>
+                <Text style={styles.submitBtnText}>Crear Mi Cuenta</Text>
               </>
             )}
           </TouchableOpacity>
@@ -154,7 +180,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: 24,
     justifyContent: 'center',
-    minHeight: '100%',
+    flexGrow: 1,
   },
   brandHeader: {
     alignItems: 'center',
@@ -221,6 +247,11 @@ const styles = StyleSheet.create({
     height: 48,
     color: '#fff',
     fontSize: 15,
+  },
+  eyeBtn: {
+    padding: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   submitBtn: {
     flexDirection: 'row',

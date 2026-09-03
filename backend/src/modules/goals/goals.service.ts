@@ -58,6 +58,12 @@ export class GoalsService {
     return goalsWithProgress;
   }
 
+  async getActiveGoal(userId: string) {
+    const goals = await this.getGoals(userId);
+    const active = goals.find((g) => g.status === GoalStatus.ACTIVA) || goals[0] || null;
+    return active;
+  }
+
   async updateGoal(
     userId: string,
     goalId: number,

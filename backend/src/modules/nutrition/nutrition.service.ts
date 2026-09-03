@@ -1,6 +1,7 @@
 import { prisma } from '../../config/db';
 import path from 'path';
 import fs from 'fs';
+import sharp from 'sharp';
 import { env } from '../../config/env';
 import { Role } from '@prisma/client';
 
@@ -14,6 +15,37 @@ export class NutritionService {
       logged_at?: string;
     }
   ) {
+    let finalStoragePath: string | undefined = undefined;
+
+    if (data.photoFilename) {
+      const mealsDir = path.join(env.resolvedStoragePath, 'meals');
+      if (!fs.existsSync(mealsDir)) {
+        fs.mkdirSync(mealsDir, { recursive: true });
+      }
+
+      const rawFilePath = path.join(mealsDir, data.photoFilename);
+      const optimizedFilename = `${path.parse(data.photoFilename).name}_opt.webp`;
+      const optimizedFilePath = path.join(mealsDir, optimizedFilename);
+
+      finalStoragePath = `meals/${data.photoFilename}`;
+
+      if (fs.existsSync(rawFilePath)) {
+        try {
+          await sharp(rawFilePath)
+            .resize(1280, 1280, { fit: 'inside', withoutEnlargement: true })
+            .webp({ quality: 80 })
+            .toFile(optimizedFilePath);
+
+          if (rawFilePath !== optimizedFilePath && fs.existsSync(rawFilePath)) {
+            fs.unlinkSync(rawFilePath);
+          }
+          finalStoragePath = `meals/${optimizedFilename}`;
+        } catch (err) {
+          console.warn('Error compressing meal photo with sharp, using original:', err);
+        }
+      }
+    }
+
     return await prisma.$transaction(async (tx) => {
       const meal = await tx.meal.create({
         data: {
@@ -24,11 +56,11 @@ export class NutritionService {
         },
       });
 
-      if (data.photoFilename) {
+      if (finalStoragePath) {
         await tx.mealPhoto.create({
           data: {
             meal_id: meal.id,
-            storage_path: `meals/${data.photoFilename}`,
+            storage_path: finalStoragePath,
           },
         });
       }
@@ -147,7 +179,7 @@ export class NutritionService {
     return {
       date: date.toISOString().split('T')[0],
       total_ml,
-      reference_ml: 2000,
+      reference_ml: 2200,
       logs,
     };
   }
