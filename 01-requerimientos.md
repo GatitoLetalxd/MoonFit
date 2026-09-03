@@ -43,7 +43,14 @@
   - Duración exacta transcurrida en segundos/minutos.
   - Cantidad de ejercicios completados sobre el total (ej. *3 de 5 ejercicios*).
   - Fecha y hora exacta del registro.
-- [x] ✅ **Historial de entrenamientos del usuario**: Lista visual en la pestaña Rutinas con badges de estado, fecha, hora, duración y botón para repetir rutina.
+- [x] ✅ **Historial de entrenamientos del usuario**:
+  - Lista visual en la pestaña Rutinas con badges de estado, fecha, hora, duración y botón para repetir rutina.
+  - **Pantalla dedicada de Historial Completo (`WorkoutHistoryScreen`) en App Móvil**:
+    - KPIs acumulados: sesiones completadas, minutos totales invertidos y entrenamientos registrados.
+    - Filtros reactivos por estado (`Todos`, `Completadas`, `Canceladas`).
+    - Filtros por tipo de rutina (`Todos`, `Fuerza`, `HIIT`, `Core`, `Cardio`).
+    - Tarjetas con desglose detallado de ejercicios completados (`X/Y ej.`), duración exacta en minutos (`⏱️`) y botón directo para repetir el entrenamiento en el reproductor.
+    - Persistencia y sincronización Offline-First con caché local.
 - [x] ✅ **Sistema de Rachas Activas (*Streaks 🔥*)**: Cálculo de días consecutivos de entrenamiento en el Dashboard.
 - [x] ✅ **Asignación de rutinas por Administrador**: El coach/admin puede asignar rutinas específicas a los usuarios.
 
@@ -54,10 +61,13 @@
 - [x] ✅ **Registro de medidas corporales opcionales**: Cintura (cm), brazo (cm) y almacenamiento JSON extensible.
 - [x] ✅ **Subida de fotos de progreso físico privadas**:
   - Almacenamiento seguro en servidor con nombres UUID no predecibles.
-  - **Streaming autenticado de fotos**: No existen URLs públicas; las imágenes solo se sirven mediante verificación de token JWT del usuario propietario o del administrador (`/api/progress/photos/:id/view`).
+  - **Streaming autenticado de fotos**: No existen URLs públicas; las imágenes solo se sirven mediante verificación de token JWT del usuario propietario o del administrador (`/api/progress/photos/:id/view`), con soporte de parámetro `?token=` para compatibilidad con el pipeline nativo de Android Fresco.
 - [x] ✅ **Comparador Visual de Fotos "Antes y Después"**:
   - Modo lado a lado con selección dinámica de fechas.
   - Modo deslizador interactivo (*Split-view Slider*) para comparar cambios corporales directos.
+- [x] ✅ **Visor en Pantalla Completa & Guardado en Galería (App Móvil)**:
+  - Apertura táctil en alta resolución con fecha y fondo oscuro.
+  - Botón nativo para **"Guardar Foto en Mi Galería"** del teléfono mediante `expo-media-library` y gestión de permisos del sistema operativo.
 - [x] ✅ **Gráfica Interactiva de Evolución de Peso (`WeightChart`)**:
   - Trazado de línea de peso semanal con Canvas/SVG.
   - Línea de referencia de Peso Inicial.
@@ -72,11 +82,14 @@
   - Selector de **Sensación Corporal** (🌱 *Ligera y con energía*, 🥗 *Satisfecha y en balance*, ⚡ *Fuerte y nutrida*, 🥱 *Pesada o lenta*).
   - Subida opcional de fotografía del plato con vista previa.
   - Campo de descripción o notas libre (sin obligar a conteo calórico obsesivo).
-- [x] ✅ **Historial visual de comidas**: Tarjetas con fotos, etiquetas de tipo, sensación corporal y fecha/hora.
-- [x] ✅ **Registro de consumo de agua diario**:
+- [x] ✅ **Historial visual de comidas**:
+  - Tarjetas con miniatura nítida del plato, etiquetas de tipo, sensación corporal y fecha/hora.
+  - **Visor ampliado en modal** al tocar la miniatura con notas de la comida y botón para guardar la foto en la galería del dispositivo.
+- [x] ✅ **Registro y Sincronización de Consumo de Agua Diario**:
   - Barra de progreso interactiva con meta orientativa (2200 ml / día).
   - Botones rápidos de incremento (+250 ml vaso, +500 ml botella).
   - Botón de reinicio rápido.
+  - **Sincronización instantánea entre pestañas (Inicio y Nutrición)**: Implementación con `useFocusEffect` y cálculo en zona horaria local (`offlineStorage`) para evitar desfases de carga.
 - [x] ✅ **Mensajes informativos y guías de hidratación**: Consejos nutricionales basados en hábitos saludables.
 
 ---
@@ -104,36 +117,55 @@
   - Tipos: Entrenar, Tomar Agua, Registrar Peso Semanal.
   - Configuración de hora y frecuencia (diaria, semanal).
   - Switch de activación/desactivación rápida.
+  - **Selector interactivo de Día de la Semana** (`[Dom] [Lun] [Mar] [Mié] [Jue] [Vie] [Sáb]`) para el pesaje semanal.
+  - **Steppers de ajuste rápido de hora** (`[-1h]`, `[-15m]`, `[+15m]`, `[+1h]`) con display digital de hora centrado y presets de horarios populares.
 - [-] ⏳ **Notificaciones en navegador (Web Notifications API)**: Notificaciones visuales en la aplicación web.
-- [x] ✅ **Notificaciones locales nativas en dispositivo móvil**: Disparo local en segundo plano con acciones Aceptar / Posponer (+30 min) mediante React Native/Expo (`expo-notifications`).
+- [x] ✅ **Notificaciones locales nativas en dispositivo móvil**: Disparo local en segundo plano con acciones Aceptar / Posponer (+30 min) mediante React Native/Expo (`expo-notifications`) con triggers `WEEKLY` y `DAILY`.
 
 ---
 
-### 2.8 Panel de Administrador (Web)
-- [x] ✅ **Listado completo de usuarios**: Buscador por nombre/correo, filtros de estado (activo/inactivo) y métricas globales.
-- [x] ✅ **Vista de Detalle por Usuario**:
-  - Resumen biométrico y meta activa.
-  - Gráfica de peso semanal del usuario.
-  - Visor seguro de fotos de progreso privadas.
-  - Registro de comidas y hábitos.
-  - **Auditoría de Entrenamientos y Adherencia**: KPIs de *Total Sesiones*, *Completadas*, *Canceladas*, *Tasa de Finalización %* y desglose de cada entrenamiento realizado.
-- [x] ✅ **Gestión directa del usuario**: Cambiar contraseña, activar/desactivar y eliminar cuenta.
-- [x] ✅ **Módulo de Feedback / Coaching**: Envío de mensajes y consejos personalizados al usuario con historial de feedback.
-- [x] ✅ **Switch rápido de rol**: Acceso instantáneo entre vista de Usuario y vista de Administrador para pruebas y gestión.
+### 2.8 Panel de Administrador (Web & App Móvil)
+- [x] ✅ **Acceso inteligente y condicional**: Tarjetas de supervisión en Perfil e Inicio visibles exclusivamente para cuentas con rol `ADMIN`.
+- [x] ✅ **Listado completo de alumnos (`AdminUsersScreen`)**:
+  - Buscador en tiempo real por nombre o correo.
+  - Filtros de estado (`ACTIVO` / `INACTIVO`) y métricas globales.
+  - Tarjetas con foto de perfil / avatar, fecha de ingreso y contadores rápidos de actividad:
+    - 🏋️ Rutinas realizadas
+    - 📸 Fotos de progreso
+    - 🥗 Comidas registradas
+    - ⚖️ Pesajes semanales
+- [x] ✅ **Vista de Detalle Integral por Alumno (`AdminUserDetailScreen`)**:
+  - **Ficha biométrica:** Edad, estatura, peso inicial e IMC estimado.
+  - **Pestaña 🏋️ Rutinas:** Auditoría cronológica de entrenamientos realizados (duración, fecha, ejercicios completados).
+  - **Pestaña 📸 Fotos de Progreso:** Galería de evolución física con visor a pantalla completa en alta resolución y botón de **guardado en la galería del teléfono**.
+  - **Pestaña 🥗 Comidas:** Registro nutricional con miniaturas de fotos de platos, tipo de comida, fecha, notas y visor con guardado en galería.
+  - **Pestaña ⚖️ Pesajes:** Historial de pesajes semanales con comparador de diferencia de peso vs peso inicial.
+  - **💬 Módulo de Feedback Directo:** Envío de recomendaciones personalizadas de entrenamiento y nutrición que el alumno recibe en su pantalla de inicio.
+- [x] ✅ **Gestión directa del usuario (Web)**: Cambiar contraseña, activar/desactivar y eliminar cuenta con borrado en cascada.
+- [x] ✅ **Switch rápido de rol en Web**: Acceso instantáneo entre vista de Usuario y Administrador para pruebas y supervisión.
 
 ---
 
-### 2.9 Branding e Identidad Visual
+### 2.9 Branding e Inspiración Diaria
 - [x] ✅ **Logo Oficial de MoonFit**: Isotipo de luna creciente con silueta atlética, mancuernas e iluminación neón.
 - [x] ✅ **Optimización Multiformato**: Archivo fuente comprimido en un 98.6% a formatos WebP (512x512 y 128x128), Favicon PNG (64x64) y PNG optimizado.
-- [x] ✅ **Integración en la interfaz**: Desplegado en Login, Registro, Onboarding, Navbar superior, Pantalla de Carga y Favicon de la pestaña.
+- [x] ✅ **Frases de Ánimo, Paciencia y Recomposición Corporal (`motivationQuotes`)**:
+  - Consejos científicos sobre fluctuaciones de peso, volumen de grasa vs músculo y valoración del esfuerzo diario.
+  - Tarjeta interactiva en Inicio con botón para cambiar de frase.
+  - Banners empáticos en la pestaña de Progreso.
 
 ---
 
 ## 3. Requerimientos No Funcionales
 
-- [x] ✅ **Arquitectura y Rendimiento**: Frontend React 19 + TypeScript sobre Vite con builds optimizados en submilisegundos (~480ms).
-- [x] ✅ **Diseño UI/UX de Alta Gama**: Estética atlética oscura (*Dark Luxury Glassmorphism*), paleta HSL balanceada, tipografía Inter y Outfit, microanimaciones CSS y confetti al completar logros.
-- [x] ✅ **Seguridad de Datos**: Contraseñas hasheadas con bcrypt (10 rounds), validación de tipos en TypeScript, aislamiento de rutas privadas y fotos protegidas contra accesos directos.
+- [x] ✅ **Arquitectura y Rendimiento Web**: Frontend React 19 + TypeScript sobre Vite con builds optimizados en submilisegundos (~480ms).
+- [x] ✅ **App Móvil Nativa (React Native 0.76+ / Expo SDK 52-53)**:
+  - Compilación nativa en APK de Release para Android.
+  - **Soporte Offline-First**: Persistencia de datos locales en `AsyncStorage`, cola de sincronización de fondo con reintentos automáticos e indicador de estado en cabecera con colapsado a icono tras 1 segundo.
+  - **Adaptación a Pantallas (Safe Area Insets)**: Interfaz blindada con `react-native-safe-area-context` para dispositivos con notch, punch-hole y barras de navegación edge-to-edge.
+  - **Splash Screen Oscuro Nativo**: Configuración en Android 12+ (`Theme.App.SplashScreen`, fondo `#0B0F17`) eliminando destellos blancos en el arranque.
+  - **Teclado y Formularios**: Scroll suave y evitación del teclado en login y registro sin obstruir botones.
+  - **Seguridad en Entrada de Texto**: Botón de ojo interactivo (`Eye` / `EyeOff`) para revelar u ocultar contraseñas al escribir.
+- [x] ✅ **Diseño UI/UX de Alta Gama**: Estética atlética oscura (*Dark Luxury Glassmorphism*), paleta HSL balanceada, tipografía Inter y Outfit, microanimaciones CSS/nativas y confetti al completar logros.
+- [x] ✅ **Seguridad de Datos**: Contraseñas hasheadas con bcrypt (10 rounds), validación de tipos en TypeScript, aislamiento de rutas privadas y fotos protegidas contra accesos directos con streaming autenticado.
 - [x] ✅ **Base de Datos Relacional**: PostgreSQL con Prisma ORM, tipos fuertemente tipados, índices en claves foráneas y relaciones con borrado en cascada.
-- [x] ✅ **App Móvil Nativa (React Native / Expo) & Soporte Offline-First**: Aplicación móvil autónoma para Android compilada en APK con motor de sincronización de fondo, caché local en AsyncStorage y persistencia completa sin internet.

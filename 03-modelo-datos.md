@@ -36,6 +36,7 @@ Almacena las cuentas de usuario y administradores con su perfil biométrico y es
 | `age` | Int | NULL | Edad en años |
 | `height_cm` | Float | NULL | Altura en centímetros |
 | `initial_weight_kg` | Float | NULL | Peso inicial al registrarse (kg) |
+| `avatar_url` | String | NULL | Ruta o URL de la foto de perfil |
 | `active` | Boolean | `@default(true)` | Estado de activación de la cuenta |
 | `onboarding_completed`| Boolean | `@default(false)` | Indica si completó el asistente inicial |
 | `created_at` | DateTime | `@default(now())` | Fecha y hora de registro |
