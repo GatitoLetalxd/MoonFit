@@ -275,9 +275,20 @@ npm run dev
 
 ---
 
+## 📚 Documentación Técnica y Operativa
+
+1. 📋 [01-requerimientos.md](01-requerimientos.md): Requisitos funcionales, no funcionales y diseño UX/UI.
+2. 🏛️ [02-arquitectura.md](02-arquitectura.md): Arquitectura de software, backend modular, flujo de datos y mobile offline-first.
+3. 🗄️ [03-modelo-datos.md](03-modelo-datos.md): Esquema de base de datos PostgreSQL, relaciones y diccionarios de datos.
+4. 🚀 [04-despliegue-produccion.md](04-despliegue-produccion.md): Guía de despliegue en VPS (Nginx, PM2, PostgreSQL, SSL Certbot y optimización <350MB RAM).
+5. 🛡️ [05-registro-cambios-produccion.md](05-registro-cambios-produccion.md): **Registro obligatorio de auditoría y control de cambios en producción**.
+
+---
+
 ## 📱 Estado del Roadmap
 - [x] **Fase 1 (Completada):** Plataforma web responsive SPA con backend modular, PostgreSQL y diseño Dark Glassmorphism.
 - [x] **Fase 2 (Completada):** Aplicación móvil nativa **React Native + Expo**, soporte Offline-First, historial completo de entrenamientos, visores de fotos en alta resolución con guardado en galería, panel de supervisión de alumnos para el Administrador y generación exitosa del APK de Release.
+- [x] **Fase 3 (En Curso - Producción):** Despliegue en VPS activo (`https://moonfit.moondev.online/api`) bajo protocolo estricto de auditoría y retrocompatibilidad.
 
 ---
 
