@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import { prisma } from '../../config/db';
 import { usersService } from '../users/users.service';
+import { notificationsService } from '../notifications/notifications.service';
 
 export class AdminService {
   async listUsers(options: {
@@ -208,6 +209,17 @@ export class AdminService {
       },
     });
 
+    // Notificar al alumno en su teléfono en tiempo real
+    notificationsService
+      .notifyUser(userId, {
+        title: '🏋️‍♂️ ¡Nueva Rutina Asignada por tu Coach!',
+        body: `Tu entrenador te ha asignado: "${routine.name}". ¡Revisa tus ejercicios!`,
+        channelId: 'moonfit_coach_v2',
+        categoryId: 'moonfit_coach_cat_v2',
+        data: { category: 'coach', routineId },
+      })
+      .catch((e) => console.warn('Push error al asignar rutina:', e));
+
     return assignment;
   }
 
@@ -228,6 +240,17 @@ export class AdminService {
         },
       },
     });
+
+    // Notificar al alumno con push interactiva
+    notificationsService
+      .notifyUser(userId, {
+        title: '💬 Mensaje de tu Coach MoonFit',
+        body: message.length > 110 ? `${message.slice(0, 107)}...` : message,
+        channelId: 'moonfit_coach_v2',
+        categoryId: 'moonfit_coach_cat_v2',
+        data: { category: 'coach', feedbackId: feedback.id },
+      })
+      .catch((e) => console.warn('Push error al enviar feedback:', e));
 
     return feedback;
   }

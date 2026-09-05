@@ -39,6 +39,8 @@ Almacena las cuentas de usuario y administradores con su perfil biométrico y es
 | `avatar_url` | String | NULL | Ruta o URL de la foto de perfil |
 | `active` | Boolean | `@default(true)` | Estado de activación de la cuenta |
 | `onboarding_completed`| Boolean | `@default(false)` | Indica si completó el asistente inicial |
+| `expo_push_token` | String | NULL | Token de Expo Push Notifications para alertas remotas |
+| `motivation_tone` | String | `@default("disciplina")` | Tono de mensajes (`disciplina` \| `empatico` \| `salud`) |
 | `created_at` | DateTime | `@default(now())` | Fecha y hora de registro |
 | `updated_at` | DateTime | `@updatedAt` | Última actualización |
 

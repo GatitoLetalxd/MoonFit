@@ -10,10 +10,13 @@ import {
   SyncActionType,
 } from '../types';
 
+export const DEFAULT_DAILY_WATER_ML = 2200;
+
 export const STORAGE_KEYS = {
   ROUTINES: '@moonfit_cached_routines',
   WORKOUTS: '@moonfit_cached_workouts',
   WATER: '@moonfit_cached_water',
+  WATER_GOAL: '@moonfit_daily_water_goal',
   WEIGHTS: '@moonfit_cached_weights',
   GOAL: '@moonfit_cached_goal',
   REMINDERS: '@moonfit_cached_reminders',
@@ -232,6 +235,27 @@ export const offlineStorage = {
     } catch (e) {
       console.warn('Error adding local water:', e);
       return amount_ml;
+    }
+  },
+
+  async getDailyWaterGoal(): Promise<number> {
+    try {
+      const raw = await AsyncStorage.getItem(STORAGE_KEYS.WATER_GOAL);
+      if (raw) {
+        const val = parseInt(raw, 10);
+        if (!isNaN(val) && val > 0) return val;
+      }
+    } catch (e) {
+      console.warn('Error reading daily water goal:', e);
+    }
+    return DEFAULT_DAILY_WATER_ML; // 2200 ml por defecto
+  },
+
+  async saveDailyWaterGoal(goalMl: number): Promise<void> {
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.WATER_GOAL, String(goalMl));
+    } catch (e) {
+      console.warn('Error saving daily water goal:', e);
     }
   },
 

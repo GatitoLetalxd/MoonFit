@@ -30,6 +30,8 @@ model User {
   avatar_url           String?
   active               Boolean              @default(true)
   onboarding_completed Boolean              @default(false)
+  expo_push_token      String?
+  motivation_tone      String               @default("disciplina")
   created_at           DateTime             @default(now())
   updated_at           DateTime             @updatedAt
 

@@ -37,10 +37,17 @@ import {
   Maximize2,
 } from 'lucide-react-native';
 
-export const ProgressScreen: React.FC = () => {
+export const ProgressScreen: React.FC<any> = ({ route }) => {
   const { user } = useAuth();
   const { showToast, triggerHaptic } = useNotification();
   const { isOnline, enqueueAction } = useSync();
+
+  useEffect(() => {
+    if (route?.params?.openWeightModal) {
+      setWeightModalVisible(true);
+      triggerHaptic('light');
+    }
+  }, [route?.params?.openWeightModal]);
 
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [weightLogs, setWeightLogs] = useState<WeeklyWeightLog[]>([]);

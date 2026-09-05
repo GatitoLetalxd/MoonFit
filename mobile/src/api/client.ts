@@ -4,7 +4,7 @@ import { Platform } from 'react-native';
 
 // URL del backend: En dispositivo físico usa la IP LAN de la PC o la variable de entorno.
 export const BASE_API_URL =
-  process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.7:3000/api';
+  process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.11:3000/api';
 
 export const apiClient = axios.create({
   baseURL: BASE_API_URL,

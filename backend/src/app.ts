@@ -18,6 +18,7 @@ import progressRoutes from './modules/progress/progress.routes';
 import nutritionRoutes from './modules/nutrition/nutrition.routes';
 import goalsRoutes from './modules/goals/goals.routes';
 import remindersRoutes from './modules/reminders/reminders.routes';
+import notificationsRoutes from './modules/notifications/notifications.routes';
 
 export const app: Express = express();
 
@@ -94,6 +95,7 @@ app.use('/api/progress', progressRoutes);
 app.use('/api/nutrition', nutritionRoutes);
 app.use('/api/goals', goalsRoutes);
 app.use('/api/reminders', remindersRoutes);
+app.use('/api/notifications', notificationsRoutes);
 
 // 404 Route Handler
 app.use((_req: Request, res: Response) => {

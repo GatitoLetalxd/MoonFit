@@ -3,7 +3,7 @@ import { env } from './config/env';
 import { logger } from './config/logger';
 import { prisma } from './config/db';
 
-const server = app.listen(env.port, () => {
+const server = app.listen(env.port, '0.0.0.0', () => {
   logger.info(`🚀 MoonFit Backend API running on port ${env.port} [${env.NODE_ENV}]`);
   logger.info(`🔗 Health check available at http://localhost:${env.port}/health`);
   logger.info(`🔐 Storage directory: ${env.resolvedStoragePath}`);

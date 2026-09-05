@@ -20,7 +20,15 @@ import { useNotification } from '../../context/NotificationContext';
 import { useSync } from '../../context/SyncContext';
 import { offlineStorage } from '../../utils/offlineStorage';
 import { remindersApi, goalsApi, usersApi } from '../../api/services';
-import { scheduleLocalReminder, cancelNotificationByCategory } from '../../utils/notifications';
+import {
+  scheduleLocalReminder,
+  cancelNotificationByCategory,
+  triggerTestInteractiveNotification,
+} from '../../utils/notifications';
+import {
+  smartNotificationEngine,
+  MotivationStyle,
+} from '../../services/smartNotificationEngine';
 import { Goal, Reminder } from '../../types';
 import { theme } from '../../theme';
 import {
@@ -39,6 +47,9 @@ import {
   Plus,
   Camera,
   Calendar,
+  Volume2,
+  Zap,
+  Moon,
 } from 'lucide-react-native';
 
 const DAYS_OF_WEEK = [
@@ -94,6 +105,11 @@ export const ProfileScreen: React.FC = () => {
   // Guide modal state
   const [guideModalVisible, setGuideModalVisible] = useState<boolean>(false);
 
+  // Smart Notifications & Motivation Tone State
+  const [motivationStyle, setMotivationStyle] = useState<MotivationStyle>('disciplina');
+  const [quietHoursEnabled, setQuietHoursEnabled] = useState<boolean>(true);
+  const [testModalVisible, setTestModalVisible] = useState<boolean>(false);
+
   const handlePickAvatar = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -141,13 +157,17 @@ export const ProfileScreen: React.FC = () => {
 
   const loadLocalCache = async () => {
     try {
-      const [cachedGoal, cachedReminders] = await Promise.all([
+      const [cachedGoal, cachedReminders, currentStyle, quietCfg] = await Promise.all([
         offlineStorage.getCachedGoal(),
         offlineStorage.getCachedReminders(),
+        smartNotificationEngine.getMotivationStyle(),
+        smartNotificationEngine.getQuietHours(),
       ]);
 
       if (cachedGoal) setActiveGoal(cachedGoal);
       if (cachedReminders && cachedReminders.length > 0) setReminders(cachedReminders);
+      if (currentStyle) setMotivationStyle(currentStyle);
+      if (quietCfg) setQuietHoursEnabled(quietCfg.enabled);
     } catch (e) {
       console.warn('Error cargando caché en perfil:', e);
     }
@@ -177,7 +197,7 @@ export const ProfileScreen: React.FC = () => {
           if (defaultRem?.data) {
             setReminders([defaultRem.data]);
             await offlineStorage.saveCachedReminders([defaultRem.data]);
-            scheduleLocalReminder('entrenar', '08:00');
+            await scheduleLocalReminder('entrenar', '08:00');
           }
         } else {
           setReminders(rRes.data);
@@ -255,6 +275,47 @@ export const ProfileScreen: React.FC = () => {
     } else {
       await enqueueAction('UPDATE_REMINDER', { id: rem.id, data: { active: newActive } });
     }
+  };
+
+  const handleSelectMotivationStyle = async (style: MotivationStyle) => {
+    triggerHaptic('light');
+    setMotivationStyle(style);
+    await smartNotificationEngine.setMotivationStyle(style);
+    showToast(
+      'Estilo Actualizado',
+      `Tono configurado: ${
+        style === 'disciplina'
+          ? '🔥 Disciplina y Reto'
+          : style === 'salud'
+          ? '🧬 Salud y Ciencia'
+          : '🌱 Empático y Positivo'
+      }`,
+      'success'
+    );
+  };
+
+  const handleToggleQuietHours = async (val: boolean) => {
+    triggerHaptic('light');
+    setQuietHoursEnabled(val);
+    await smartNotificationEngine.setQuietHours(val, '22:30', '07:00');
+    showToast(
+      'Horas de Silencio',
+      val
+        ? 'Activadas (22:30 a 07:00). MoonFit no emitirá sonidos de noche.'
+        : 'Desactivadas.',
+      'info'
+    );
+  };
+
+  const handleTriggerTest = async (type: 'agua' | 'entrenar' | 'pesarse' | 'racha') => {
+    triggerHaptic('success');
+    setTestModalVisible(false);
+    showToast(
+      'Alerta de Prueba Enviada',
+      'En 2 segundos aparecerá en tu barra de notificaciones con sonido y botones.',
+      'info'
+    );
+    await triggerTestInteractiveNotification(type);
   };
 
   const handleOpenTimeModal = (rem: Reminder) => {
@@ -593,6 +654,110 @@ export const ProfileScreen: React.FC = () => {
               </Text>
             </TouchableOpacity>
           )}
+
+          {/* Selector de Estilo Motivacional */}
+          <View style={styles.smartSection}>
+            <View style={styles.smartSectionHeader}>
+              <Zap size={16} color={theme.colors.primary} />
+              <Text style={styles.smartSectionTitle}>ESTILO DE MOTIVACIÓN</Text>
+            </View>
+            <Text style={styles.smartSectionSubtitle}>
+              Personaliza el tono con el que MoonFit te acompaña y desafía en tus alertas:
+            </Text>
+            <View style={styles.motivationStylesRow}>
+              <TouchableOpacity
+                style={[
+                  styles.motivationChip,
+                  motivationStyle === 'disciplina' && styles.motivationChipActive,
+                ]}
+                onPress={() => handleSelectMotivationStyle('disciplina')}
+              >
+                <Text style={styles.motivationChipIcon}>🔥</Text>
+                <Text
+                  style={[
+                    styles.motivationChipText,
+                    motivationStyle === 'disciplina' && styles.motivationChipTextActive,
+                  ]}
+                >
+                  Disciplina
+                </Text>
+                <Text style={styles.motivationChipSub}>Sin excusas</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.motivationChip,
+                  motivationStyle === 'empatico' && styles.motivationChipActive,
+                ]}
+                onPress={() => handleSelectMotivationStyle('empatico')}
+              >
+                <Text style={styles.motivationChipIcon}>🌱</Text>
+                <Text
+                  style={[
+                    styles.motivationChipText,
+                    motivationStyle === 'empatico' && styles.motivationChipTextActive,
+                  ]}
+                >
+                  Empático
+                </Text>
+                <Text style={styles.motivationChipSub}>Paso a paso</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.motivationChip,
+                  motivationStyle === 'salud' && styles.motivationChipActive,
+                ]}
+                onPress={() => handleSelectMotivationStyle('salud')}
+              >
+                <Text style={styles.motivationChipIcon}>🧬</Text>
+                <Text
+                  style={[
+                    styles.motivationChipText,
+                    motivationStyle === 'salud' && styles.motivationChipTextActive,
+                  ]}
+                >
+                  Ciencia
+                </Text>
+                <Text style={styles.motivationChipSub}>Metabolismo</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Interruptor de Horas de Silencio */}
+          <View style={styles.quietHoursRow}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+              <View style={styles.quietIconBox}>
+                <Moon size={18} color={theme.colors.accent} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.quietTitle}>Horas de Silencio (22:30 - 07:00)</Text>
+                <Text style={styles.quietSub}>
+                  Silencia alertas sonoras durante tu descanso nocturno
+                </Text>
+              </View>
+            </View>
+            <Switch
+              value={quietHoursEnabled}
+              onValueChange={handleToggleQuietHours}
+              trackColor={{ false: 'rgba(255,255,255,0.1)', true: theme.colors.primaryDark }}
+              thumbColor={quietHoursEnabled ? theme.colors.primary : '#ccc'}
+            />
+          </View>
+
+          {/* Botón de Prueba en Vivo */}
+          <TouchableOpacity
+            style={styles.testNotificationBtn}
+            onPress={() => {
+              triggerHaptic('light');
+              setTestModalVisible(true);
+            }}
+          >
+            <Volume2 size={18} color={theme.colors.primary} />
+            <Text style={styles.testNotificationBtnText}>
+              🔔 Probar Notificación Interactiva en Vivo
+            </Text>
+          </TouchableOpacity>
         </View>
 
         {/* Logout Button */}
@@ -797,9 +962,19 @@ export const ProfileScreen: React.FC = () => {
               <View style={styles.guideStep}>
                 <Text style={styles.guideStepNum}>3</Text>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.guideStepTitle}>Inicio Automático (Xiaomi / MIUI / HyperOS)</Text>
+                  <Text style={styles.guideStepTitle}>Inicio Automático (Xiaomi / MIUI / HyperOS / Samsung)</Text>
                   <Text style={styles.guideStepDesc}>
                     En la información de la app MoonFit, habilita la opción <Text style={{ color: '#fff' }}>"Inicio automático"</Text> y en Ahorro de Batería selecciona <Text style={{ color: '#fff' }}>"Sin restricciones"</Text>.
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.guideStep}>
+                <Text style={styles.guideStepNum}>4</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.guideStepTitle}>Alarmas y Recordatorios Exactos</Text>
+                  <Text style={styles.guideStepDesc}>
+                    Ve a Ajustes de Android &gt; Aplicaciones &gt; Acceso especial de apps &gt; <Text style={{ color: '#fff' }}>"Alarmas y recordatorios"</Text> &gt; activa <Text style={{ color: theme.colors.primary }}>Permitir establecer alarmas</Text> para MoonFit. Esto garantiza que suenen al segundo exacto incluso con la pantalla apagada.
                   </Text>
                 </View>
               </View>
@@ -811,6 +986,91 @@ export const ProfileScreen: React.FC = () => {
                 <Text style={styles.guideCloseBtnText}>¡Entendido!</Text>
               </TouchableOpacity>
             </ScrollView>
+          </View>
+        </View>
+      </Modal>
+      {/* Modal: Probar Alertas Interactivas */}
+      <Modal visible={testModalVisible} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Bell size={20} color={theme.colors.primary} />
+                <Text style={styles.modalTitle}>PROBAR NOTIFICACIÓN</Text>
+              </View>
+              <TouchableOpacity onPress={() => setTestModalVisible(false)}>
+                <X size={20} color="#fff" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalSubtitle}>
+              Selecciona qué alerta deseas probar. En 2 segundos llegará a tu barra de notificaciones con su sonido dedicado y botones interactivos:
+            </Text>
+
+            <View style={styles.testOptionsList}>
+              <TouchableOpacity
+                style={styles.testOptionCard}
+                onPress={() => handleTriggerTest('agua')}
+              >
+                <Text style={styles.testOptionEmoji}>💧</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.testOptionTitle}>Alerta de Hidratación</Text>
+                  <Text style={styles.testOptionDesc}>
+                    Sonido de gota + Botones "+250ml", "+500ml" y "Posponer 1h" sin abrir la app.
+                  </Text>
+                </View>
+                <ChevronRight size={18} color={theme.colors.primary} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.testOptionCard}
+                onPress={() => handleTriggerTest('entrenar')}
+              >
+                <Text style={styles.testOptionEmoji}>🔥</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.testOptionTitle}>Alerta de Rutina del Día</Text>
+                  <Text style={styles.testOptionDesc}>
+                    Sonido enérgico deportivo + Botón "Iniciar Rutina" para entrar directo al reproductor.
+                  </Text>
+                </View>
+                <ChevronRight size={18} color={theme.colors.primary} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.testOptionCard}
+                onPress={() => handleTriggerTest('pesarse')}
+              >
+                <Text style={styles.testOptionEmoji}>⚖️</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.testOptionTitle}>Alerta de Pesaje Semanal</Text>
+                  <Text style={styles.testOptionDesc}>
+                    Sonido campana zen + Botón "Registrar Peso" para abrir directamente el modal.
+                  </Text>
+                </View>
+                <ChevronRight size={18} color={theme.colors.primary} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.testOptionCard}
+                onPress={() => handleTriggerTest('racha')}
+              >
+                <Text style={styles.testOptionEmoji}>🚨</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.testOptionTitle}>Alerta de Racha SOS</Text>
+                  <Text style={styles.testOptionDesc}>
+                    Alerta de racha en peligro + Botón "Salvar Racha" con rutina express de 7 min.
+                  </Text>
+                </View>
+                <ChevronRight size={18} color={theme.colors.primary} />
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              style={styles.cancelBtn}
+              onPress={() => setTestModalVisible(false)}
+            >
+              <Text style={styles.cancelBtnText}>Cerrar</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -1389,5 +1649,152 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     fontWeight: '900',
+  },
+  // Estilos de Notificaciones Inteligentes
+  smartSection: {
+    marginTop: 18,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  smartSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  smartSectionTitle: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: theme.colors.primary,
+    letterSpacing: 1,
+  },
+  smartSectionSubtitle: {
+    fontSize: 12,
+    color: theme.colors.textMuted,
+    lineHeight: 16,
+    marginBottom: 12,
+  },
+  motivationStylesRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  motivationChip: {
+    flex: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: theme.radius.md,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+  },
+  motivationChipActive: {
+    backgroundColor: 'rgba(6, 182, 212, 0.12)',
+    borderColor: theme.colors.primary,
+  },
+  motivationChipIcon: {
+    fontSize: 18,
+    marginBottom: 4,
+  },
+  motivationChipText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: theme.colors.textDim,
+  },
+  motivationChipTextActive: {
+    color: '#fff',
+  },
+  motivationChipSub: {
+    fontSize: 10,
+    color: theme.colors.textMuted,
+    marginTop: 2,
+  },
+  quietHoursRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderRadius: theme.radius.md,
+    padding: 12,
+    marginTop: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  quietIconBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quietTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  quietSub: {
+    fontSize: 11,
+    color: theme.colors.textMuted,
+    marginTop: 2,
+  },
+  testNotificationBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(6, 182, 212, 0.1)',
+    borderWidth: 1.5,
+    borderColor: theme.colors.primary,
+    borderRadius: theme.radius.md,
+    paddingVertical: 12,
+    marginTop: 14,
+  },
+  testNotificationBtnText: {
+    color: theme.colors.primary,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  // Modal de opciones de prueba
+  testOptionsList: {
+    marginVertical: 14,
+    gap: 10,
+  },
+  testOptionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderRadius: theme.radius.md,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  testOptionEmoji: {
+    fontSize: 24,
+  },
+  testOptionTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#fff',
+  },
+  testOptionDesc: {
+    fontSize: 11,
+    color: theme.colors.textMuted,
+    marginTop: 2,
+    lineHeight: 15,
+  },
+  cancelBtn: {
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: theme.radius.md,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginTop: 6,
+  },
+  cancelBtnText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
   },
 });

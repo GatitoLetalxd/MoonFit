@@ -112,15 +112,28 @@
 
 ---
 
-### 2.7 Recordatorios
+### 2.7 Recordatorios y Sistema Inteligente de Notificaciones
 - [x] ✅ **Gestión de recordatorios en base de datos y UI**:
   - Tipos: Entrenar, Tomar Agua, Registrar Peso Semanal.
   - Configuración de hora y frecuencia (diaria, semanal).
   - Switch de activación/desactivación rápida.
   - **Selector interactivo de Día de la Semana** (`[Dom] [Lun] [Mar] [Mié] [Jue] [Vie] [Sáb]`) para el pesaje semanal.
   - **Steppers de ajuste rápido de hora** (`[-1h]`, `[-15m]`, `[+15m]`, `[+1h]`) con display digital de hora centrado y presets de horarios populares.
-- [-] ⏳ **Notificaciones en navegador (Web Notifications API)**: Notificaciones visuales en la aplicación web.
-- [x] ✅ **Notificaciones locales nativas en dispositivo móvil**: Disparo local en segundo plano con acciones Aceptar / Posponer (+30 min) mediante React Native/Expo (`expo-notifications`) con triggers `WEEKLY` y `DAILY`.
+- [x] ✅ **Notificaciones Interactivas con Botones de Acción (Actionable Notifications)**:
+  - **💧 Hidratación:** Botones `+250 ml`, `+500 ml` y `Posponer 1h` directos en la notificación (ejecución en segundo plano sin abrir la app + confirmación inmediata *"Zero-Click"* con porcentaje del día).
+  - **🔥 Rutina del Día:** Botones `🚀 Iniciar Rutina` (deep link directo a `WorkoutPlayerScreen`), `⚡ Express (7 min)` (rutina express para salvar racha) y `💤 Descanso Hoy`.
+  - **⚖️ Pesaje Semanal:** Botón `⚖️ Registrar Peso` (abre `ProgressScreen` con modal de peso enfocado) y `🗓️ Recordar Mañana`.
+  - **🚨 Racha SOS:** Alerta inteligente nocturna si la racha invicta está en peligro, con botón para activar rutina de rescate de 7 min.
+  - **🏋️‍♂️ Feedback del Coach:** Notificaciones push en tiempo real cuando el entrenador asigna una rutina o escribe feedback.
+- [x] ✅ **Canales Nativos y Alertas Sensoriales en Android**:
+  - 5 Canales independientes versionados (`moonfit_workouts_v2`, `moonfit_water_v2`, `moonfit_weight_v2`, `moonfit_streak_v2`, `moonfit_coach_v2`).
+  - Patrones hápticos de vibración personalizados y luces LED representativas por categoría.
+  - Sonidos de audio nativos de baja latencia en formato PCM WAV (`moonfit_workout.wav`, `moonfit_water.wav`, `moonfit_bell.wav`).
+- [x] ✅ **Motor de Mensajes Contextuales (`smartNotificationEngine`)**:
+  - Textos dinámicos adaptados en tiempo real a la racha actual, meta y porcentaje de agua consumido hoy, y tipo de rutina programada.
+  - **Selector de Estilo Motivacional en Perfil:** *🔥 Disciplina y Reto* (sin excusas), *🌱 Empático y Positivo* (paso a paso), *🧬 Salud y Ciencia* (beneficios fisiológicos).
+  - **Horas de Silencio (Quiet Hours):** Ventana de descanso nocturno (22:30 a 07:00) para evitar interrupciones sonoras mientras el usuario duerme.
+  - **Modal de Pruebas en Vivo:** Botón en el perfil para disparar y probar las 4 alertas interactivas instantáneamente en el dispositivo físico.
 
 ---
 
