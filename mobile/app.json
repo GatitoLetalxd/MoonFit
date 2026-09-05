@@ -47,6 +47,13 @@
           "icon": "./assets/icon.png",
           "color": "#06B6D4"
         }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Permite a MoonFit guardar tus fotos de progreso y comidas en la galería.",
+          "savePhotosPermission": "Permite a MoonFit guardar tus fotos de progreso y comidas en la galería."
+        }
       ]
     ]
   }

@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
-import * as MediaLibrary from 'expo-media-library';
+import * as MediaLibrary from 'expo-media-library/legacy';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useFocusEffect } from '@react-navigation/native';
 import { Header } from '../../components/common/Header';
@@ -149,27 +149,37 @@ export const NutritionScreen: React.FC = () => {
     try {
       triggerHaptic('light');
       setSavingMealPhoto(true);
-      const { status } = await MediaLibrary.requestPermissionsAsync();
-      if (status !== 'granted') {
+
+      let perm = await MediaLibrary.getPermissionsAsync();
+      if (!perm.granted && perm.status !== 'granted') {
+        perm = await MediaLibrary.requestPermissionsAsync();
+      }
+      if (!perm.granted && perm.status !== 'granted') {
         showToast('Permiso Denegado', 'Se requiere permiso para guardar fotos en tu galería.', 'warning');
         setSavingMealPhoto(false);
         return;
       }
 
       showToast('Descargando...', 'Guardando foto de comida en tu galería.', 'info');
+      const token = authToken || (await AsyncStorage.getItem('@moonfit_access_token'));
       const filename = `moonfit_comida_${Date.now()}.jpg`;
-      const fileUri = `${FileSystem.documentDirectory}${filename}`;
+      const fileUri = `${FileSystem.cacheDirectory || FileSystem.documentDirectory}${filename}`;
 
       const res = await FileSystem.downloadAsync(photoUrl, fileUri, {
-        headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined,
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
 
       if (res.status === 200) {
-        await MediaLibrary.saveToLibraryAsync(res.uri);
+        try {
+          await MediaLibrary.createAssetAsync(res.uri);
+        } catch {
+          await MediaLibrary.saveToLibraryAsync(res.uri);
+        }
+        await FileSystem.deleteAsync(fileUri, { idempotent: true }).catch(() => {});
         triggerHaptic('success');
         showToast('¡Guardada en Galería!', 'La foto se guardó exitosamente en tu teléfono.', 'success');
       } else {
-        showToast('Error', 'No se pudo descargar la imagen.', 'error');
+        showToast('Error', 'No se pudo descargar la imagen del servidor.', 'error');
       }
     } catch (e: any) {
       showToast('Error al guardar', e.message || 'No se pudo guardar la foto', 'error');

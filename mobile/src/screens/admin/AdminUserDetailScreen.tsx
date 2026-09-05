@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as MediaLibrary from 'expo-media-library';
+import * as MediaLibrary from 'expo-media-library/legacy';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Header } from '../../components/common/Header';
 import { useNotification } from '../../context/NotificationContext';
@@ -114,24 +114,41 @@ export const AdminUserDetailScreen: React.FC = () => {
 
   const handleSavePhotoToGallery = async (photoId: string) => {
     try {
+      triggerHaptic('light');
       setSavingPhoto(true);
-      const { status } = await MediaLibrary.requestPermissionsAsync();
-      if (status !== 'granted') {
+
+      let perm = await MediaLibrary.getPermissionsAsync();
+      if (!perm.granted && perm.status !== 'granted') {
+        perm = await MediaLibrary.requestPermissionsAsync();
+      }
+      if (!perm.granted && perm.status !== 'granted') {
         showToast('Permiso Requerido', 'Necesitamos acceso a la galería para guardar la foto.', 'warning');
+        setSavingPhoto(false);
         return;
       }
 
+      showToast('Descargando...', 'Guardando foto de progreso en tu galería.', 'info');
       const token = authToken || (await AsyncStorage.getItem('@moonfit_access_token'));
-      const photoUrl = progressApi.getPhotoViewUrl(photoId);
-      const fileUri = `${FileSystem.documentDirectory}progress_${photoId}.jpg`;
+      const photoUrl = progressApi.getPhotoViewUrl(photoId, token);
+      const filename = `moonfit_alumno_progreso_${photoId}_${Date.now()}.jpg`;
+      const fileUri = `${FileSystem.cacheDirectory || FileSystem.documentDirectory}${filename}`;
 
       const downloadRes = await FileSystem.downloadAsync(photoUrl, fileUri, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
 
-      await MediaLibrary.saveToLibraryAsync(downloadRes.uri);
-      showToast('¡Foto Guardada!', 'La imagen se guardó exitosamente en la galería de tu teléfono.', 'success');
-      triggerHaptic('success');
+      if (downloadRes.status === 200) {
+        try {
+          await MediaLibrary.createAssetAsync(downloadRes.uri);
+        } catch {
+          await MediaLibrary.saveToLibraryAsync(downloadRes.uri);
+        }
+        await FileSystem.deleteAsync(fileUri, { idempotent: true }).catch(() => {});
+        showToast('¡Foto Guardada!', 'La imagen se guardó exitosamente en la galería.', 'success');
+        triggerHaptic('success');
+      } else {
+        showToast('Error', 'No se pudo descargar la imagen del servidor.', 'error');
+      }
     } catch (e: any) {
       showToast('Error al Guardar', e.message || 'No se pudo guardar la imagen.', 'error');
     } finally {
@@ -141,24 +158,41 @@ export const AdminUserDetailScreen: React.FC = () => {
 
   const handleSaveMealPhotoToGallery = async (photoId: string) => {
     try {
+      triggerHaptic('light');
       setSavingMealPhoto(true);
-      const { status } = await MediaLibrary.requestPermissionsAsync();
-      if (status !== 'granted') {
+
+      let perm = await MediaLibrary.getPermissionsAsync();
+      if (!perm.granted && perm.status !== 'granted') {
+        perm = await MediaLibrary.requestPermissionsAsync();
+      }
+      if (!perm.granted && perm.status !== 'granted') {
         showToast('Permiso Requerido', 'Necesitamos acceso a la galería para guardar la foto.', 'warning');
+        setSavingMealPhoto(false);
         return;
       }
 
+      showToast('Descargando...', 'Guardando foto de comida en tu galería.', 'info');
       const token = authToken || (await AsyncStorage.getItem('@moonfit_access_token'));
-      const photoUrl = nutritionApi.getMealPhotoViewUrl(photoId);
-      const fileUri = `${FileSystem.documentDirectory}meal_${photoId}.jpg`;
+      const photoUrl = nutritionApi.getMealPhotoViewUrl(photoId, token);
+      const filename = `moonfit_alumno_comida_${photoId}_${Date.now()}.jpg`;
+      const fileUri = `${FileSystem.cacheDirectory || FileSystem.documentDirectory}${filename}`;
 
       const downloadRes = await FileSystem.downloadAsync(photoUrl, fileUri, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
 
-      await MediaLibrary.saveToLibraryAsync(downloadRes.uri);
-      showToast('¡Foto Guardada!', 'La foto del plato se guardó en la galería de tu teléfono.', 'success');
-      triggerHaptic('success');
+      if (downloadRes.status === 200) {
+        try {
+          await MediaLibrary.createAssetAsync(downloadRes.uri);
+        } catch {
+          await MediaLibrary.saveToLibraryAsync(downloadRes.uri);
+        }
+        await FileSystem.deleteAsync(fileUri, { idempotent: true }).catch(() => {});
+        showToast('¡Foto Guardada!', 'La foto del plato se guardó en tu galería.', 'success');
+        triggerHaptic('success');
+      } else {
+        showToast('Error', 'No se pudo descargar la imagen del servidor.', 'error');
+      }
     } catch (e: any) {
       showToast('Error al Guardar', e.message || 'No se pudo guardar la imagen.', 'error');
     } finally {
