@@ -7,11 +7,6 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#0B0F17",
-    "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#0B0F17"
-    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.moonfit.app"
@@ -37,7 +32,6 @@
         "android.permission.READ_MEDIA_VIDEO",
         "android.permission.READ_MEDIA_AUDIO"
       ],
-      "usesCleartextTraffic": true,
       "predictiveBackGestureEnabled": false
     },
     "web": {
@@ -57,6 +51,14 @@
         {
           "photosPermission": "Permite a MoonFit guardar tus fotos de progreso y comidas en la galería.",
           "savePhotosPermission": "Permite a MoonFit guardar tus fotos de progreso y comidas en la galería."
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#0B0F17"
         }
       ]
     ],
