@@ -20,6 +20,13 @@ export const NOTIFICATION_IDENTIFIERS = {
   REMINDER_ENTRENAR: 'moonfit_reminder_entrenar',
   REMINDER_AGUA: 'moonfit_reminder_agua',
   REMINDER_PESARSE: 'moonfit_reminder_pesarse',
+  REMINDER_RACHA_SOS: 'moonfit_reminder_racha_sos',
+  // Slots de agua cada ~2.5h (5 recordatorios diarios, cada uno reemplaza al anterior)
+  AGUA_SLOT_09: 'moonfit_agua_slot_09',
+  AGUA_SLOT_11: 'moonfit_agua_slot_11',
+  AGUA_SLOT_14: 'moonfit_agua_slot_14',
+  AGUA_SLOT_16: 'moonfit_agua_slot_16',
+  AGUA_SLOT_19: 'moonfit_agua_slot_19',
 };
 
 // ==================== IDENTIFICADORES DE ACCIONES ====================
@@ -72,15 +79,71 @@ const EXPRESS_ROUTINE = {
   ],
 };
 
-// Configuración general del comportamiento de notificaciones en primer plano
+// ==================== HANDLER INTELIGENTE DE NOTIFICACIONES ====================
+// Este handler se ejecuta de forma ASYNC antes de mostrar cada notificación.
+// Permite suprimir silenciosamente alertas cuando el contexto del usuario no lo requiere.
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
+  handleNotification: async (notification) => {
+    const category = notification.request.content.data?.category as string | undefined;
+
+    try {
+      // --- Agua: solo mostrar si llevan 3+ horas sin registrar o meta incumplida ---
+      if (category === 'agua') {
+        const [lastTs, todayWater, goalMl] = await Promise.all([
+          offlineStorage.getLastWaterLogTimestamp(),
+          offlineStorage.getCachedWater(),
+          offlineStorage.getDailyWaterGoal(),
+        ]);
+
+        // Meta ya cumplida → suprimir
+        if ((todayWater.total_ml || 0) >= goalMl) {
+          console.log('[NotifHandler] 💧 Meta de agua cumplida → suprimiendo recordatorio');
+          return { shouldShowAlert: false, shouldPlaySound: false, shouldSetBadge: false, shouldShowBanner: false, shouldShowList: false };
+        }
+
+        // Registró agua en las últimas 3 horas → suprimir
+        const THREE_HOURS_MS = 3 * 60 * 60 * 1000;
+        if (lastTs > 0 && Date.now() - lastTs < THREE_HOURS_MS) {
+          console.log('[NotifHandler] 💧 Agua registrada hace menos de 3h → suprimiendo recordatorio');
+          return { shouldShowAlert: false, shouldPlaySound: false, shouldSetBadge: false, shouldShowBanner: false, shouldShowList: false };
+        }
+
+        // Condicional superado → mostrar alerta
+        console.log('[NotifHandler] 💧 Mostrando recordatorio de agua (3h+ sin registro)');
+      }
+
+      // --- Racha: solo mostrar si NO entrenó hoy ---
+      if (category === 'racha') {
+        const completedToday = await offlineStorage.didWorkoutToday();
+        if (completedToday) {
+          console.log('[NotifHandler] 🔥 Workout completado hoy → suprimiendo alerta de racha SOS');
+          return { shouldShowAlert: false, shouldPlaySound: false, shouldSetBadge: false, shouldShowBanner: false, shouldShowList: false };
+        }
+        console.log('[NotifHandler] 🚨 Sin entreno hoy → Mostrando alerta de racha SOS');
+      }
+
+      // --- Entrenamiento: suprimir si ya entreno hoy ---
+      if (category === 'entrenar') {
+        const completedToday = await offlineStorage.didWorkoutToday();
+        if (completedToday) {
+          console.log('[NotifHandler] 🏋️ Ya entreno hoy → suprimiendo recordatorio de rutina');
+          return { shouldShowAlert: false, shouldPlaySound: false, shouldSetBadge: false, shouldShowBanner: false, shouldShowList: false };
+        }
+      }
+    } catch (e) {
+      console.warn('[NotifHandler] Error en verificación contextual:', e);
+      // En caso de error, mostrar la notificación para no perder alertas importantes
+    }
+
+    // Default: mostrar la notificación normalmente
+    return {
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    };
+  },
 });
 
 // Singleton guard para evitar re-inicialización redundante de canales/categorías
@@ -478,6 +541,20 @@ export const cancelNotificationByCategory = async (category: string) => {
       await Notifications.cancelScheduledNotificationAsync(fixedId).catch(() => {});
     }
 
+    // 1b. Para agua: también cancelar los 5 slots inteligentes
+    if (category === 'agua') {
+      const waterSlots = [
+        NOTIFICATION_IDENTIFIERS.AGUA_SLOT_09,
+        NOTIFICATION_IDENTIFIERS.AGUA_SLOT_11,
+        NOTIFICATION_IDENTIFIERS.AGUA_SLOT_14,
+        NOTIFICATION_IDENTIFIERS.AGUA_SLOT_16,
+        NOTIFICATION_IDENTIFIERS.AGUA_SLOT_19,
+      ];
+      for (const slotId of waterSlots) {
+        await Notifications.cancelScheduledNotificationAsync(slotId).catch(() => {});
+      }
+    }
+
     // 2. Sweep: limpiar cualquier notificación huérfana con data.category coincidente
     const scheduled = await Notifications.getAllScheduledNotificationsAsync();
     for (const notif of scheduled) {
@@ -681,6 +758,84 @@ export const scheduleLocalReminder = async (
 };
 
 /**
+ * Programa 5 slots de recordatorio de agua distribuidos durante el día.
+ * Cada slot tiene un identificador único para reemplazar el anterior sin duplicar.
+ *
+ * El handler inteligente (setNotificationHandler) decide en tiempo real si
+ * suprimir o mostrar cada alerta según el contexto del usuario:
+ *   - ¿Bebió agua en las últimas 3 horas? → suprimir
+ *   - ¿Meta diaria cumplida? → suprimir con mensaje de felicitación
+ *   - Caso contrario → mostrar con botones interactivos
+ *
+ * Llamar en: ProfileScreen.loadData() en lugar de scheduleLocalReminder('agua', ...)
+ */
+export const scheduleWaterReminders = async (): Promise<boolean> => {
+  try {
+    const hasPermission = await initNotifications();
+    if (!hasPermission) return false;
+
+    const style = await smartNotificationEngine.getMotivationStyle();
+    const goalMl = await offlineStorage.getDailyWaterGoal();
+    const todayWater = await offlineStorage.getCachedWater();
+
+    // Mensaje genérico para el slot (el handler filtrará si no aplica)
+    const content = smartNotificationEngine.getSmartWaterMessage(
+      todayWater.total_ml || 0,
+      goalMl,
+      style
+    );
+
+    // 5 slots de agua: 09:00 / 11:30 / 14:00 / 16:30 / 19:00
+    const WATER_SLOTS: Array<{ id: string; hour: number; minute: number }> = [
+      { id: NOTIFICATION_IDENTIFIERS.AGUA_SLOT_09, hour: 9,  minute: 0  },
+      { id: NOTIFICATION_IDENTIFIERS.AGUA_SLOT_11, hour: 11, minute: 30 },
+      { id: NOTIFICATION_IDENTIFIERS.AGUA_SLOT_14, hour: 14, minute: 0  },
+      { id: NOTIFICATION_IDENTIFIERS.AGUA_SLOT_16, hour: 16, minute: 30 },
+      { id: NOTIFICATION_IDENTIFIERS.AGUA_SLOT_19, hour: 19, minute: 0  },
+    ];
+
+    // Cancelar slots anteriores para evitar acumulación
+    for (const slot of WATER_SLOTS) {
+      await Notifications.cancelScheduledNotificationAsync(slot.id).catch(() => {});
+    }
+    // También limpiar el slot legacy de agua individual
+    await Notifications.cancelScheduledNotificationAsync(
+      NOTIFICATION_IDENTIFIERS.REMINDER_AGUA
+    ).catch(() => {});
+
+    // Programar cada slot ajustando el desfase horario de Android si existe
+    for (const slot of WATER_SLOTS) {
+      const adjustedHour = await getAdjustedHourForTrigger(slot.hour, slot.minute);
+
+      const trigger: Notifications.DailyTriggerInput = {
+        type: Notifications.SchedulableTriggerInputTypes.DAILY,
+        hour: adjustedHour,
+        minute: slot.minute,
+        channelId: NOTIFICATION_CHANNELS.WATER,
+      };
+
+      await Notifications.scheduleNotificationAsync({
+        identifier: slot.id,
+        content: {
+          title: content.title,
+          body: content.body,
+          sound: 'moonfit_water',
+          categoryIdentifier: NOTIFICATION_CATEGORIES.WATER,
+          data: { category: 'agua' },
+        },
+        trigger,
+      });
+    }
+
+    console.log('[Notifications] ✅ 5 slots de agua programados (09:00, 11:30, 14:00, 16:30, 19:00). El handler filtrará según contexto.');
+    return true;
+  } catch (error) {
+    console.error('[Notifications] Error programando slots de agua:', error);
+    return false;
+  }
+};
+
+/**
  * Dispara una notificación de prueba instantánea (en 2 segundos) para que el usuario
  * pueda experimentar los botones interactivos, el sonido y el comportamiento en su dispositivo.
  */
@@ -767,6 +922,63 @@ export const triggerTestInteractiveNotification = async (
     return true;
   } catch (e) {
     console.warn('Error disparando notificación de prueba:', e);
+    return false;
+  }
+};
+
+/**
+ * Programa la alerta diaria de racha a las 21:00.
+ * Verifica si el usuario ya hizo ejercicio ese día revisando el historial cacheado.
+ * Si entrenaó hoy NO dispara la alerta; si no lo hizo, muestra el aviso SOS.
+ *
+ * Llamar desde: ProfileScreen.loadData() y desde el login inicial.
+ */
+export const scheduleStreakAlert = async (): Promise<boolean> => {
+  try {
+    const hasPermission = await initNotifications();
+    if (!hasPermission) return false;
+
+    // Cancelar la anterior para evitar duplicados
+    await Notifications.cancelScheduledNotificationAsync(
+      NOTIFICATION_IDENTIFIERS.REMINDER_RACHA_SOS
+    ).catch(() => {});
+
+    // Calcular hora ajustada para que suene exactamente a las 21:00 local
+    const triggerHour = await getAdjustedHourForTrigger(21, 0);
+
+    const style = await smartNotificationEngine.getMotivationStyle();
+
+    // Estimar racha actual desde el caché local (sin llamada de red)
+    const workouts = await offlineStorage.getCachedWorkouts();
+    const streakDays = Math.max(1, workouts.length > 0 ? Math.min(30, workouts.length) : 1);
+    const content = smartNotificationEngine.getStreakAlertMessage(streakDays, style);
+
+    const trigger: Notifications.DailyTriggerInput = {
+      type: Notifications.SchedulableTriggerInputTypes.DAILY,
+      hour: triggerHour,
+      minute: 0,
+      channelId: NOTIFICATION_CHANNELS.STREAK,
+    };
+
+    await Notifications.scheduleNotificationAsync({
+      identifier: NOTIFICATION_IDENTIFIERS.REMINDER_RACHA_SOS,
+      content: {
+        title: content.title,
+        body: content.body,
+        sound: 'moonfit_workout',
+        categoryIdentifier: NOTIFICATION_CATEGORIES.STREAK,
+        data: { category: 'racha' },
+      },
+      trigger,
+    });
+
+    const nextMs = await Notifications.getNextTriggerDateAsync(trigger);
+    if (nextMs) {
+      console.log(`[Notifications] ✅ Alerta de racha programada para: ${new Date(nextMs).toLocaleString()}`);
+    }
+    return true;
+  } catch (error) {
+    console.warn('[Notifications] Error programando alerta de racha:', error);
     return false;
   }
 };

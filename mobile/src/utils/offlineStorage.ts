@@ -17,6 +17,8 @@ export const STORAGE_KEYS = {
   WORKOUTS: '@moonfit_cached_workouts',
   WATER: '@moonfit_cached_water',
   WATER_GOAL: '@moonfit_daily_water_goal',
+  LAST_WATER_LOG_TS: '@moonfit_last_water_log_ts',   // timestamp del último registro de agua
+  LAST_WORKOUT_TODAY_TS: '@moonfit_last_workout_today_ts', // timestamp del último workout de hoy
   WEIGHTS: '@moonfit_cached_weights',
   GOAL: '@moonfit_cached_goal',
   REMINDERS: '@moonfit_cached_reminders',
@@ -231,6 +233,8 @@ export const offlineStorage = {
       const today = await this.getCachedWater();
       const newTotal = (today.total_ml || 0) + amount_ml;
       await this.saveCachedWater({ total_ml: newTotal });
+      // ✅ Guardar timestamp del último registro para el handler inteligente
+      await this.saveLastWaterLogTimestamp(Date.now());
       return newTotal;
     } catch (e) {
       console.warn('Error adding local water:', e);
@@ -256,6 +260,78 @@ export const offlineStorage = {
       await AsyncStorage.setItem(STORAGE_KEYS.WATER_GOAL, String(goalMl));
     } catch (e) {
       console.warn('Error saving daily water goal:', e);
+    }
+  },
+
+  // ==================== HELPERS DE NOTIFICACIONES INTELIGENTES ====================
+
+  /**
+   * Guarda el timestamp Unix (ms) del último registro de agua del usuario.
+   * Usado por setNotificationHandler para decidir si suprimir la alerta de agua.
+   */
+  async saveLastWaterLogTimestamp(ts: number): Promise<void> {
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.LAST_WATER_LOG_TS, String(ts));
+    } catch (e) {
+      console.warn('Error saving last water log timestamp:', e);
+    }
+  },
+
+  /**
+   * Devuelve el timestamp Unix (ms) del último registro de agua, o 0 si no existe.
+   */
+  async getLastWaterLogTimestamp(): Promise<number> {
+    try {
+      const raw = await AsyncStorage.getItem(STORAGE_KEYS.LAST_WATER_LOG_TS);
+      if (raw) {
+        const val = parseInt(raw, 10);
+        if (!isNaN(val)) return val;
+      }
+    } catch (e) {
+      console.warn('Error reading last water log timestamp:', e);
+    }
+    return 0;
+  },
+
+  /**
+   * Guarda el timestamp de cuando se completó un workout HOY.
+   * Llamar desde WorkoutPlayer.finishSession().
+   */
+  async saveWorkoutCompletedToday(ts: number): Promise<void> {
+    try {
+      // Guardamos con clave que incluye la fecha local para auto-expirar al día siguiente
+      const todayKey = `${STORAGE_KEYS.LAST_WORKOUT_TODAY_TS}_${getTodayKey()}`;
+      await AsyncStorage.setItem(todayKey, String(ts));
+    } catch (e) {
+      console.warn('Error saving workout completed today:', e);
+    }
+  },
+
+  /**
+   * Verifica si el usuario completó al menos un workout hoy (basado en fecha local).
+   * Primero revisa la clave de hoy en AsyncStorage; si no hay, busca en el caché de workouts.
+   * Usado por setNotificationHandler para suprimir la alerta de racha si ya entreno hoy.
+   */
+  async didWorkoutToday(): Promise<boolean> {
+    try {
+      // 1. Revisar clave rápida del día actual
+      const todayKey = `${STORAGE_KEYS.LAST_WORKOUT_TODAY_TS}_${getTodayKey()}`;
+      const fastCheck = await AsyncStorage.getItem(todayKey);
+      if (fastCheck) return true;
+
+      // 2. Fallback: escanear caché de workouts completados
+      const today = getTodayKey();
+      const workouts = await this.getCachedWorkouts();
+      return workouts.some((w) => {
+        if (w.status !== 'COMPLETADA') return false;
+        const completedDate = w.completed_at
+          ? getTodayKey(new Date(w.completed_at))
+          : null;
+        return completedDate === today;
+      });
+    } catch (e) {
+      console.warn('Error checking workout today:', e);
+      return false;
     }
   },
 

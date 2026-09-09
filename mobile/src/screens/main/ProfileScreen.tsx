@@ -22,6 +22,8 @@ import { offlineStorage } from '../../utils/offlineStorage';
 import { remindersApi, goalsApi, usersApi } from '../../api/services';
 import {
   scheduleLocalReminder,
+  scheduleStreakAlert,
+  scheduleWaterReminders,
   cancelNotificationByCategory,
   triggerTestInteractiveNotification,
 } from '../../utils/notifications';
@@ -47,7 +49,6 @@ import {
   Plus,
   Camera,
   Calendar,
-  Volume2,
   Zap,
   Moon,
 } from 'lucide-react-native';
@@ -202,6 +203,31 @@ export const ProfileScreen: React.FC = () => {
         } else {
           setReminders(rRes.data);
           await offlineStorage.saveCachedReminders(rRes.data);
+
+          // ✅ FIX CRÍTICO: Android borra los PendingIntent al matar el proceso.
+          // Reprogramamos TODAS las alarmas activas en cada inicio de sesión.
+          for (const rem of rRes.data) {
+            if (rem.active) {
+              try {
+                if (rem.type === 'agua') {
+                  // Para agua: usar los 5 slots inteligentes en lugar del slot único
+                  await scheduleWaterReminders();
+                } else {
+                  let weekdayNum = 1;
+                  if (rem.type === 'pesarse' && rem.frequency?.startsWith('semanal:')) {
+                    weekdayNum = parseInt(rem.frequency.replace('semanal:', ''), 10) || 1;
+                  }
+                  await scheduleLocalReminder(rem.type, rem.time, { weekday: weekdayNum });
+                }
+              } catch (schedErr) {
+                console.warn(`[Notifications] No se pudo reprogramar ${rem.type}:`, schedErr);
+              }
+            }
+          }
+          console.log('[Notifications] ✅ Alarmas activas restauradas al inicio de sesión.');
+
+          // Programar alerta de racha a las 21:00 (se restaura en cada inicio de sesión)
+          scheduleStreakAlert().catch(console.warn);
         }
       }
     } catch (e) {
@@ -255,11 +281,16 @@ export const ProfileScreen: React.FC = () => {
     await offlineStorage.updateLocalReminder(rem.id, { active: newActive });
 
     if (newActive) {
-      let weekdayNum = 1;
-      if (rem.type === 'pesarse' && rem.frequency?.startsWith('semanal:')) {
-        weekdayNum = parseInt(rem.frequency.replace('semanal:', ''), 10) || 1;
+      if (rem.type === 'agua') {
+        // Agua: usar los 5 slots inteligentes
+        await scheduleWaterReminders();
+      } else {
+        let weekdayNum = 1;
+        if (rem.type === 'pesarse' && rem.frequency?.startsWith('semanal:')) {
+          weekdayNum = parseInt(rem.frequency.replace('semanal:', ''), 10) || 1;
+        }
+        await scheduleLocalReminder(rem.type, rem.time, { weekday: weekdayNum });
       }
-      await scheduleLocalReminder(rem.type, rem.time, { weekday: weekdayNum });
       showToast('Alarma Activada', `Recordatorio programado con sonido y banner en pantalla.`, 'success');
     } else {
       await cancelNotificationByCategory(rem.type);
@@ -745,19 +776,7 @@ export const ProfileScreen: React.FC = () => {
             />
           </View>
 
-          {/* Botón de Prueba en Vivo */}
-          <TouchableOpacity
-            style={styles.testNotificationBtn}
-            onPress={() => {
-              triggerHaptic('light');
-              setTestModalVisible(true);
-            }}
-          >
-            <Volume2 size={18} color={theme.colors.primary} />
-            <Text style={styles.testNotificationBtnText}>
-              🔔 Probar Notificación Interactiva en Vivo
-            </Text>
-          </TouchableOpacity>
+          {/* Botón de prueba eliminado — solo disponible en modo dev */}
         </View>
 
         {/* Logout Button */}
@@ -989,91 +1008,7 @@ export const ProfileScreen: React.FC = () => {
           </View>
         </View>
       </Modal>
-      {/* Modal: Probar Alertas Interactivas */}
-      <Modal visible={testModalVisible} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Bell size={20} color={theme.colors.primary} />
-                <Text style={styles.modalTitle}>PROBAR NOTIFICACIÓN</Text>
-              </View>
-              <TouchableOpacity onPress={() => setTestModalVisible(false)}>
-                <X size={20} color="#fff" />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.modalSubtitle}>
-              Selecciona qué alerta deseas probar. En 2 segundos llegará a tu barra de notificaciones con su sonido dedicado y botones interactivos:
-            </Text>
-
-            <View style={styles.testOptionsList}>
-              <TouchableOpacity
-                style={styles.testOptionCard}
-                onPress={() => handleTriggerTest('agua')}
-              >
-                <Text style={styles.testOptionEmoji}>💧</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.testOptionTitle}>Alerta de Hidratación</Text>
-                  <Text style={styles.testOptionDesc}>
-                    Sonido de gota + Botones "+250ml", "+500ml" y "Posponer 1h" sin abrir la app.
-                  </Text>
-                </View>
-                <ChevronRight size={18} color={theme.colors.primary} />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.testOptionCard}
-                onPress={() => handleTriggerTest('entrenar')}
-              >
-                <Text style={styles.testOptionEmoji}>🔥</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.testOptionTitle}>Alerta de Rutina del Día</Text>
-                  <Text style={styles.testOptionDesc}>
-                    Sonido enérgico deportivo + Botón "Iniciar Rutina" para entrar directo al reproductor.
-                  </Text>
-                </View>
-                <ChevronRight size={18} color={theme.colors.primary} />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.testOptionCard}
-                onPress={() => handleTriggerTest('pesarse')}
-              >
-                <Text style={styles.testOptionEmoji}>⚖️</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.testOptionTitle}>Alerta de Pesaje Semanal</Text>
-                  <Text style={styles.testOptionDesc}>
-                    Sonido campana zen + Botón "Registrar Peso" para abrir directamente el modal.
-                  </Text>
-                </View>
-                <ChevronRight size={18} color={theme.colors.primary} />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.testOptionCard}
-                onPress={() => handleTriggerTest('racha')}
-              >
-                <Text style={styles.testOptionEmoji}>🚨</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.testOptionTitle}>Alerta de Racha SOS</Text>
-                  <Text style={styles.testOptionDesc}>
-                    Alerta de racha en peligro + Botón "Salvar Racha" con rutina express de 7 min.
-                  </Text>
-                </View>
-                <ChevronRight size={18} color={theme.colors.primary} />
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity
-              style={styles.cancelBtn}
-              onPress={() => setTestModalVisible(false)}
-            >
-              <Text style={styles.cancelBtnText}>Cerrar</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+      {/* Modal de prueba eliminado de producción */}
     </View>
   );
 };

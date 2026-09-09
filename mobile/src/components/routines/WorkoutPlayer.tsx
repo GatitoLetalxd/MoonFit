@@ -6,8 +6,10 @@ import {
   TouchableOpacity,
   ScrollView,
   Alert,
+  Animated,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useKeepAwake } from 'expo-keep-awake';
 import { Routine, RoutineExercise, WorkoutLog } from '../../types';
 import { ExerciseDemo } from './ExerciseDemo';
 import { getExerciseMetadata } from '../../utils/exerciseMetadata';
@@ -29,7 +31,13 @@ import {
   Dumbbell,
   Lightbulb,
   Award,
+  Timer,
+  PlayCircle,
+  StopCircle,
 } from 'lucide-react-native';
+
+// Duración de la fase de preparación en segundos
+const PREP_SECONDS = 5;
 
 interface WorkoutPlayerProps {
   routine: Routine;
@@ -42,41 +50,114 @@ export const WorkoutPlayer: React.FC<WorkoutPlayerProps> = ({
   onFinish,
   onCancel,
 }) => {
+  // Mantener la pantalla encendida durante el entrenamiento
+  useKeepAwake();
+
   const insets = useSafeAreaInsets();
   const { showToast, triggerHaptic } = useNotification();
   const exercises = routine.exercises || [];
 
+  // --- Estado principal de navegación ---
   const [currentExIndex, setCurrentExIndex] = useState<number>(0);
   const [currentSet, setCurrentSet] = useState<number>(1);
+
+  // --- Fase de descanso ---
   const [isResting, setIsResting] = useState<boolean>(false);
   const [restSecondsLeft, setRestSecondsLeft] = useState<number>(45);
 
-  // Timed exercise state
+  // --- Fase de preparación (Get Ready) ---
+  const [isPreparing, setIsPreparing] = useState<boolean>(true);
+  const [prepSecondsLeft, setPrepSecondsLeft] = useState<number>(PREP_SECONDS);
+
+  // --- Fase de ejecución para ejercicios de repeticiones ---
+  // false = mostrando "Iniciar Serie", true = serie en curso → "Finalizar Serie"
+  const [isSerieStarted, setIsSerieStarted] = useState<boolean>(false);
+
+  // --- Ejercicio isométrico / por tiempo ---
   const [timedSecondsLeft, setTimedSecondsLeft] = useState<number>(0);
   const [isTimedActive, setIsTimedActive] = useState<boolean>(false);
 
-  // Tips accordion
+  // --- Acordeón de tips ---
   const [showTips, setShowTips] = useState<boolean>(false);
 
-  // Completion state
+  // --- Estado de finalización ---
   const [isCompleted, setIsCompleted] = useState<boolean>(false);
   const [totalSeconds, setTotalSeconds] = useState<number>(0);
   const startTimeRef = useRef<number>(Date.now());
 
+  // Animación pulsante para el countdown de preparación
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
   const currentEx: RoutineExercise | undefined = exercises[currentExIndex];
   const meta = currentEx ? getExerciseMetadata(currentEx.exercise_name) : null;
 
-  // Inicializar temporizador al cambiar de ejercicio
+  // ---------- EFECTO: Animación pulsante durante preparación ----------
   useEffect(() => {
+    if (isPreparing) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 1.15,
+            duration: 500,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 500,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+    } else {
+      pulseAnim.stopAnimation();
+      pulseAnim.setValue(1);
+    }
+  }, [isPreparing]);
+
+  // ---------- EFECTO: Inicializar estado al cambiar ejercicio o serie ----------
+  useEffect(() => {
+    // Siempre empezar con fase de preparación al cambiar de serie o ejercicio
+    setIsPreparing(true);
+    setPrepSecondsLeft(PREP_SECONDS);
+    setIsSerieStarted(false);
+    setIsTimedActive(false);
+    triggerHaptic('light');
+  }, [currentExIndex, currentSet]);
+
+  // ---------- EFECTO: Countdown de preparación ----------
+  useEffect(() => {
+    if (!isPreparing) return;
+    if (prepSecondsLeft <= 0) return;
+
+    const timer = setInterval(() => {
+      setPrepSecondsLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          finishPreparation();
+          return 0;
+        }
+        if (prev <= 4) triggerHaptic('light');
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [isPreparing, prepSecondsLeft]);
+
+  // Terminar la fase de preparación y comenzar el ejercicio
+  const finishPreparation = () => {
+    setIsPreparing(false);
+    triggerHaptic('medium');
+
+    // Si es ejercicio isométrico, iniciar el temporizador automáticamente
     if (meta?.isTimed && currentEx) {
       setTimedSecondsLeft(currentEx.reps || meta.defaultSeconds || 30);
       setIsTimedActive(true);
-    } else {
-      setIsTimedActive(false);
     }
-  }, [currentExIndex, currentSet]);
+    // Si es de repeticiones, esperar que el usuario presione "Iniciar Serie"
+  };
 
-  // Temporizador para ejercicio isométrico / por tiempo
+  // ---------- EFECTO: Temporizador de ejercicio isométrico ----------
   useEffect(() => {
     let timer: any = null;
     if (isTimedActive && !isResting && timedSecondsLeft > 0) {
@@ -87,9 +168,7 @@ export const WorkoutPlayer: React.FC<WorkoutPlayerProps> = ({
             handleCompleteSet();
             return 0;
           }
-          if (prev <= 4) {
-            triggerHaptic('light');
-          }
+          if (prev <= 4) triggerHaptic('light');
           return prev - 1;
         });
       }, 1000);
@@ -97,7 +176,7 @@ export const WorkoutPlayer: React.FC<WorkoutPlayerProps> = ({
     return () => clearInterval(timer);
   }, [isTimedActive, isResting, timedSecondsLeft]);
 
-  // Temporizador de descanso
+  // ---------- EFECTO: Temporizador de descanso ----------
   useEffect(() => {
     let timer: any = null;
     if (isResting && restSecondsLeft > 0) {
@@ -108,9 +187,7 @@ export const WorkoutPlayer: React.FC<WorkoutPlayerProps> = ({
             setIsResting(false);
             return 0;
           }
-          if (prev <= 4) {
-            triggerHaptic('light');
-          }
+          if (prev <= 4) triggerHaptic('light');
           return prev - 1;
         });
       }, 1000);
@@ -118,9 +195,12 @@ export const WorkoutPlayer: React.FC<WorkoutPlayerProps> = ({
     return () => clearInterval(timer);
   }, [isResting, restSecondsLeft]);
 
+  // ---------- Completar serie ----------
   const handleCompleteSet = () => {
     if (!currentEx) return;
     triggerHaptic('success');
+    setIsSerieStarted(false);
+    setIsTimedActive(false);
 
     if (currentSet < currentEx.sets) {
       setCurrentSet((prev) => prev + 1);
@@ -138,8 +218,21 @@ export const WorkoutPlayer: React.FC<WorkoutPlayerProps> = ({
     }
   };
 
+  // ---------- Iniciar serie manualmente (ejercicios de reps) ----------
+  const handleStartSerie = () => {
+    triggerHaptic('medium');
+    setIsSerieStarted(true);
+  };
+
+  // ---------- Saltar preparación ----------
+  const handleSkipPrep = () => {
+    setPrepSecondsLeft(0);
+    finishPreparation();
+  };
+
   const { isOnline, enqueueAction } = useSync();
 
+  // ---------- Finalizar sesión ----------
   const finishSession = async () => {
     const elapsed = Math.max(60, Math.round((Date.now() - startTimeRef.current) / 1000));
     setTotalSeconds(elapsed);
@@ -161,6 +254,9 @@ export const WorkoutPlayer: React.FC<WorkoutPlayerProps> = ({
 
     // 1. Guardar de inmediato en almacenamiento local para racha e historial offline
     await offlineStorage.appendLocalWorkout(localLog);
+
+    // 2. Marcar que el usuario ya entrenó hoy (suprimir alerta de racha a las 21:00)
+    await offlineStorage.saveWorkoutCompletedToday(Date.now());
 
     const payload = {
       routine_id: routine.id,
@@ -184,6 +280,7 @@ export const WorkoutPlayer: React.FC<WorkoutPlayerProps> = ({
     showToast('¡Entrenamiento Completado!', 'Sesión guardada en tu historial.', 'success');
   };
 
+  // ---------- Cancelar ----------
   const handleCancel = () => {
     const elapsed = Math.round((Date.now() - startTimeRef.current) / 1000);
 
@@ -245,7 +342,7 @@ export const WorkoutPlayer: React.FC<WorkoutPlayerProps> = ({
     }
   };
 
-  // Pantalla de Celebración Final
+  // ---------- Pantalla de Celebración Final ----------
   if (isCompleted) {
     const durationMin = Math.round(totalSeconds / 60) || 15;
     const estCal = Math.round(durationMin * 7.5);
@@ -285,6 +382,7 @@ export const WorkoutPlayer: React.FC<WorkoutPlayerProps> = ({
 
   if (!currentEx || !meta) return null;
 
+  // ========== RENDER PRINCIPAL ==========
   return (
     <View style={styles.container}>
       {/* Header Bar */}
@@ -312,7 +410,7 @@ export const WorkoutPlayer: React.FC<WorkoutPlayerProps> = ({
         {/* Visual WebP Animation */}
         <ExerciseDemo exerciseName={currentEx.exercise_name} size="lg" />
 
-        {/* Resting Mode Banner or Active Workout Mode */}
+        {/* ===== MODO DESCANSO ===== */}
         {isResting ? (
           <View style={styles.restBanner}>
             <Text style={styles.restTitle}>DESCANSO</Text>
@@ -338,19 +436,44 @@ export const WorkoutPlayer: React.FC<WorkoutPlayerProps> = ({
               </TouchableOpacity>
             </View>
           </View>
+
+        ) : isPreparing ? (
+          /* ===== MODO PREPARACIÓN ===== */
+          <View style={styles.prepBanner}>
+            <Text style={styles.prepLabel}>¡PREPÁRATE!</Text>
+            <Animated.Text
+              style={[styles.prepCountdown, { transform: [{ scale: pulseAnim }] }]}
+            >
+              {prepSecondsLeft}
+            </Animated.Text>
+            <Text style={styles.prepSubtitle}>
+              {meta.isTimed
+                ? 'El temporizador iniciará automáticamente'
+                : 'Colócate en posición para comenzar'}
+            </Text>
+            <TouchableOpacity style={styles.skipPrepBtn} onPress={handleSkipPrep}>
+              <Text style={styles.skipPrepText}>Ya estoy listo →</Text>
+            </TouchableOpacity>
+          </View>
+
         ) : (
+          /* ===== MODO ACTIVO ===== */
           <View style={styles.activeInfoCard}>
             <Text style={styles.activeExName}>{currentEx.exercise_name}</Text>
 
+            {/* --- Isométrico / Timed --- */}
             {meta.isTimed ? (
               <View style={styles.timedBlock}>
                 <Text style={styles.timedCountdown}>{timedSecondsLeft}s</Text>
                 <Text style={styles.timedLabel}>Mantén la postura</Text>
               </View>
             ) : (
+              /* --- Repeticiones --- */
               <View style={styles.repsBlock}>
                 <Text style={styles.repsValue}>{currentEx.reps}</Text>
-                <Text style={styles.repsLabel}>Repeticiones Objetivo</Text>
+                <Text style={styles.repsLabel}>
+                  {isSerieStarted ? '¡Ejecuta las repeticiones!' : 'Repeticiones Objetivo'}
+                </Text>
               </View>
             )}
 
@@ -380,15 +503,34 @@ export const WorkoutPlayer: React.FC<WorkoutPlayerProps> = ({
         )}
       </ScrollView>
 
-      {/* Bottom Completion Action */}
-      {!isResting && (
+      {/* ===== BOTTOM BAR DE ACCIONES ===== */}
+      {!isResting && !isPreparing && (
         <View style={styles.bottomBar}>
-          <TouchableOpacity style={styles.completeSetBtn} onPress={handleCompleteSet}>
-            <CheckCircle2 size={22} color="#fff" />
-            <Text style={styles.completeSetText}>
-              {meta.isTimed ? 'Finalizar Serie' : `Completar Serie ${currentSet}/${currentEx.sets}`}
-            </Text>
-          </TouchableOpacity>
+          {meta.isTimed ? (
+            /* Isométrico: botón de terminar antes */
+            <TouchableOpacity style={styles.finishSetBtn} onPress={handleCompleteSet}>
+              <StopCircle size={22} color="#fff" />
+              <Text style={styles.completeSetText}>
+                {`Finalizar Serie ${currentSet}/${currentEx.sets}`}
+              </Text>
+            </TouchableOpacity>
+          ) : !isSerieStarted ? (
+            /* Reps: botón INICIAR SERIE */
+            <TouchableOpacity style={styles.startSerieBtn} onPress={handleStartSerie}>
+              <PlayCircle size={22} color="#fff" />
+              <Text style={styles.completeSetText}>
+                {`Iniciar Serie ${currentSet}/${currentEx.sets}`}
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            /* Reps: botón FINALIZAR SERIE */
+            <TouchableOpacity style={styles.completeSetBtn} onPress={handleCompleteSet}>
+              <CheckCircle2 size={22} color="#fff" />
+              <Text style={styles.completeSetText}>
+                {`Finalizar Serie ${currentSet}/${currentEx.sets}`}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
       )}
     </View>
@@ -446,6 +588,8 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 20,
   },
+
+  // ===== DESCANSO =====
   restBanner: {
     marginTop: 20,
     backgroundColor: 'rgba(6, 182, 212, 0.12)',
@@ -495,6 +639,53 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     fontSize: 14,
   },
+
+  // ===== PREPARACIÓN =====
+  prepBanner: {
+    marginTop: 20,
+    backgroundColor: 'rgba(251, 191, 36, 0.10)',
+    borderRadius: theme.radius.lg,
+    padding: 28,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#FBBF24',
+  },
+  prepLabel: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#FBBF24',
+    letterSpacing: 2,
+    marginBottom: 8,
+  },
+  prepCountdown: {
+    fontSize: 72,
+    fontWeight: '900',
+    color: '#fff',
+    lineHeight: 80,
+  },
+  prepSubtitle: {
+    fontSize: 13,
+    color: theme.colors.textMuted,
+    textAlign: 'center',
+    marginTop: 10,
+    marginBottom: 16,
+    lineHeight: 18,
+  },
+  skipPrepBtn: {
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    borderRadius: theme.radius.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+  },
+  skipPrepText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+
+  // ===== MODO ACTIVO =====
   activeInfoCard: {
     marginTop: 16,
     backgroundColor: 'rgba(255, 255, 255, 0.03)',
@@ -571,12 +762,32 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginBottom: 4,
   },
+
+  // ===== BOTTOM BAR =====
   bottomBar: {
     padding: 20,
     backgroundColor: 'rgba(11, 15, 23, 0.95)',
     borderTopWidth: 1,
     borderTopColor: theme.colors.borderSubtle,
   },
+  // INICIAR SERIE (azul/primary)
+  startSerieBtn: {
+    flexDirection: 'row',
+    backgroundColor: theme.colors.primaryDark,
+    borderRadius: theme.radius.md,
+    paddingVertical: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 2,
+    borderColor: theme.colors.primary,
+    shadowColor: theme.colors.primary,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  // FINALIZAR SERIE (verde/success)
   completeSetBtn: {
     flexDirection: 'row',
     backgroundColor: theme.colors.success,
@@ -591,11 +802,25 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 8,
   },
+  // TERMINAR ANTES (isométrico, outlined)
+  finishSetBtn: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderRadius: theme.radius.md,
+    paddingVertical: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1.5,
+    borderColor: '#EF4444',
+  },
   completeSetText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '800',
   },
+
+  // ===== COMPLETADO =====
   completedContainer: {
     flex: 1,
     backgroundColor: '#0B0F17',

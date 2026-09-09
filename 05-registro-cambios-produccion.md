@@ -107,3 +107,43 @@ Cada cambio debe seguir este ciclo de vida:
 - **Estado en Producción:** [🟡 Pendiente | 🚀 Desplegado | ⚠️ En Observación | ❌ Revertido]
 
 -->
+
+---
+
+## PRD-004 — Mejoras UX: Reproductor de Ejercicios (WorkoutPlayer)
+
+- **Fecha:** 2026-09-09
+- **Tipo:** Mejora de UX — Solo Frontend Móvil
+- **Correlativo:** PRD-004
+- **Autor:** Agente de Desarrollo (MoonFit AI)
+
+### Motivo
+El temporizador de ejercicios iniciaba inmediatamente sin dar tiempo al usuario de prepararse. Adicionalmente, la pantalla se apagaba durante los ejercicios y no existían controles explícitos de inicio/fin de serie.
+
+### Archivos Modificados
+- `mobile/src/components/routines/WorkoutPlayer.tsx` — Rediseño completo de lógica de temporizador y controles.
+- `mobile/package.json` — Añadida dependencia `expo-keep-awake` (SDK 57 compatible).
+
+### Cambios Implementados
+1. **`useKeepAwake()`**: La pantalla no se apaga mientras el WorkoutPlayer esté montado.
+2. **Fase de Preparación (5s)**: Antes de cada serie aparece un countdown animado "¡PREPÁRATE!" con opción de saltarlo.
+3. **Botón "INICIAR SERIE"**: Para ejercicios de repeticiones, la serie no empieza automáticamente; el usuario controla el inicio.
+4. **Botón "FINALIZAR SERIE"**: Al terminar las reps, el usuario confirma presionando el botón verde.
+5. **Isométricos**: El temporizador inicia automáticamente tras los 5s de preparación, con botón "Terminar Antes" (outlined rojo).
+
+### Impacto en Base de Datos
+- **Ninguno.** Solo cambios en el cliente móvil.
+
+### Impacto en el Cliente Móvil
+- Requiere nueva compilación APK y distribución a usuarios.
+- Retrocompatible: los endpoints de `LOG_WORKOUT` no cambian.
+
+### Comandos de Despliegue en VPS
+- No aplica. El backend no se modifica.
+- Para distribución móvil: compilar nuevo APK con EAS Build.
+
+### Plan de Rollback
+- Restaurar `WorkoutPlayer.tsx` desde el commit anterior en git.
+- No hay rollback de base de datos necesario.
+
+- **Estado en Producción:** 🟡 Pendiente compilación APK
