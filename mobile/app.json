@@ -31,7 +31,11 @@
         "android.permission.SCHEDULE_EXACT_ALARM",
         "android.permission.USE_EXACT_ALARM",
         "android.permission.WAKE_LOCK",
-        "android.permission.RECEIVE_BOOT_COMPLETED"
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_AUDIO"
       ],
       "usesCleartextTraffic": true,
       "predictiveBackGestureEnabled": false
@@ -55,6 +59,12 @@
           "savePhotosPermission": "Permite a MoonFit guardar tus fotos de progreso y comidas en la galería."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "5863964f-7895-4be1-9ebd-bb28d200fd2d"
+      }
+    },
+    "owner": "gatitoletalxd"
   }
 }
